@@ -76,7 +76,7 @@ file(GLOB_RECURSE SOURCES "Core/*.*"
         "USB_DEVICE/*.*"
         "FATFS/*.*"
 )
-
+list(FILTER SOURCES EXCLUDE REGEX "SEGGER_RTT_ASM_ARMv7M\\.s$")
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32H743VITX_FLASH.ld)
 
 add_link_options(-Wl,-gc-sections,--print-memory-usage,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map)

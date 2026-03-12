@@ -528,11 +528,11 @@ void UART8_IRQHandler(void)
 void TIM17_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM17_IRQn 0 */
-  SEGGER_SYSVIEW_RecordEnterISR();
+  // SEGGER_SYSVIEW_RecordEnterISR();
   /* USER CODE END TIM17_IRQn 0 */
   HAL_TIM_IRQHandler(&htim17);
   /* USER CODE BEGIN TIM17_IRQn 1 */
-  SEGGER_SYSVIEW_RecordExitISR();
+  // SEGGER_SYSVIEW_RecordExitISR();
   /* USER CODE END TIM17_IRQn 1 */
 }
 

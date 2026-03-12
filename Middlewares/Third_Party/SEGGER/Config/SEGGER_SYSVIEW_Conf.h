@@ -93,6 +93,13 @@ Additional information:
 
 // (可选) 为了避免 STM32H7 的 Cache 问题，建议把 RTT Buffer 放到特定区域
 // 如果你不知道怎么改链接脚本，先暂时不用管这一行
+/* ==================================================================== */
+/* 强制将 SystemView 的内部控制块也放到非 Cache 区域                      */
+/* ==================================================================== */
+#define SEGGER_SYSVIEW_SECTION        ".rtt_memory"
+
+/* >>>>> 新增：禁止 SystemView 使用底层汇编优化函数，强制回退到 C 语言版本 <<<<< */
+#define SEGGER_SYSVIEW_USE_RTT_ASM    0
 
 #endif  // SEGGER_SYSVIEW_CONF_H
 

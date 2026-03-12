@@ -256,6 +256,8 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
+    SEGGER_SYSVIEW_Conf();  // 配置 SystemView
+    SEGGER_SYSVIEW_Start(); // <<<<< 放在这里！在 RTOS 启动前强制开启记录！
   /* add events, ... */
   /* USER CODE END RTOS_EVENTS */
 
@@ -271,7 +273,6 @@ void MX_FREERTOS_Init(void) {
 void StartDefaultTask(void *argument)
 {
   /* init code for USB_DEVICE */
-    SEGGER_SYSVIEW_Start();//启动
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN StartDefaultTask */
   /* Infinite loop */

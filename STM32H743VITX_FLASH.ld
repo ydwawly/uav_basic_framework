@@ -161,7 +161,16 @@ SECTIONS
     *(.dma_buffer*)
     . = ALIGN(32);
   } >RAM_D2
-
+/* >>>>> 存放 RTT 和 SystemView 的无缓存数据 <<<<< */
+  .rtt_memory :
+  {
+    . = ALIGN(4);
+    _srtt = .;         /* 新增：记录段起始地址 */
+    *(.rtt_memory)
+    *(.rtt_memory*)
+    . = ALIGN(4);
+    _ertt = .;         /* 新增：记录段结束地址 */
+  } >RAM_D2
   /* User_heap_stack section, used to check that there is enough RAM left */
   ._user_heap_stack :
   {

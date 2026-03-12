@@ -53,7 +53,9 @@ Revision: $Rev: 7745 $
 */
 #include "FreeRTOS.h"
 #include "SEGGER_SYSVIEW.h"
+#include "SEGGER_RTT.h"      // <<<<< 新增：引入 RTT 头文件
 #include "main.h"
+__attribute__((section(".rtt_memory"))) static U8 _UpBuffer[1024];
 extern const SEGGER_SYSVIEW_OS_API SYSVIEW_X_OS_TraceAPI;
 
 /*********************************************************************
@@ -97,18 +99,24 @@ static void _cbSendSystemDesc(void) {
 **********************************************************************
 */
 void SEGGER_SYSVIEW_Conf(void) {
-    U32 TickRate;
+    U32 SysClock = 240000000;
 
-    // 获取系统主频 (STM32H7 通常是 400MHz 或 480MHz)
-    // 如果你的工程里有 SystemCoreClock 这个变量，直接用它
-    // 如果没有，你可以手动写死，比如 400000000
-    U32 SysClock = SystemCoreClock;
+    // 1. 【绝对优先：先给碗！】必须在 Init 之前把内存绑死！
+    // 绝不能颠倒，否则 Init 内部一发数据，没内存就会触发 SizeOfBuffer=0 死机！
+    SEGGER_RTT_ConfigUpBuffer(SEGGER_SYSVIEW_RTT_CHANNEL, "SysView", _UpBuffer, sizeof(_UpBuffer), SEGGER_RTT_MODE_NO_BLOCK_SKIP);
 
-    SEGGER_SYSVIEW_Init(SysClock, SysClock,
-                        &SYSVIEW_X_OS_TraceAPI, _cbSendSystemDesc);
+    // 暴力兜底：防止任何底层重置，强行把结构体参数写死
+    extern SEGGER_RTT_CB _SEGGER_RTT;
+    _SEGGER_RTT.aUp[SEGGER_SYSVIEW_RTT_CHANNEL].pBuffer = (char*)_UpBuffer;
+    _SEGGER_RTT.aUp[SEGGER_SYSVIEW_RTT_CHANNEL].SizeOfBuffer = sizeof(_UpBuffer);
+    _SEGGER_RTT.aUp[SEGGER_SYSVIEW_RTT_CHANNEL].WrOff = 0; // 强行清零写入偏移
+    _SEGGER_RTT.aUp[SEGGER_SYSVIEW_RTT_CHANNEL].RdOff = 0; // 强行清零读取偏移
+    _SEGGER_RTT.aUp[SEGGER_SYSVIEW_RTT_CHANNEL].Flags = SEGGER_RTT_MODE_NO_BLOCK_SKIP;
 
-    // 设置 RAM 的基地址 (STM32H7 的 RAM 通常从 0x20000000 或 0x24000000 开始)
-    // 这行代码有助于 SystemView 节省带宽
+    // 2. 【再盛饭！】内存彻底就绪后，再执行 Init！
+    SEGGER_SYSVIEW_Init(SysClock, SysClock, &SYSVIEW_X_OS_TraceAPI, _cbSendSystemDesc);
+
+    // 3. 最后设置 RAM 基地址
     SEGGER_SYSVIEW_SetRAMBase(0x20000000);
 }
 

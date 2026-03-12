@@ -56,7 +56,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-
+extern uint32_t _srtt; // 新增：引入 .rtt_memory 的起始地址
+extern uint32_t _ertt; // 新增：引入 .rtt_memory 的结束地址
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -118,17 +119,26 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
 
   /* USER CODE BEGIN Init */
   MPU_Config_DMA_Memory();
+  uint32_t rtt_len = (uint32_t)&_ertt - (uint32_t)&_srtt;
+  if (rtt_len > 0) {
+    memset(&_srtt, 0, rtt_len);
+  }
+  // >>>>> 新增：终极杀招！强制精准清零 RTT 控制块，绝不让它跳过初始化！ <<<<<
+  extern SEGGER_RTT_CB _SEGGER_RTT;
+  memset(&_SEGGER_RTT, 0, sizeof(_SEGGER_RTT));
+  SEGGER_RTT_Init();       // 2. 提前初始化 RTT 结构体，消除野指针！
+
   /* USER CODE END Init */
+  HAL_Init();
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  SystemCoreClockUpdate(); // <<<<< 新增这一行！
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -148,7 +158,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-  SEGGER_SYSVIEW_Conf();  // 配置 SystemView
+
   BSPInit();
   SensorHub_Init();
   // AppPcTest_Init();

@@ -164,6 +164,7 @@ standard names. */
 #define USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION 0
 
 /* USER CODE BEGIN Defines */
+#include "SEGGER_SYSVIEW_FreeRTOS.h"  // <<<<< 新增：打通 FreeRTOS 和 SystemView 的任督二脉
 /* Section where parameter definitions can be added (for instance, to override default ones in FreeRTOS.h) */
 /* USER CODE END Defines */
 

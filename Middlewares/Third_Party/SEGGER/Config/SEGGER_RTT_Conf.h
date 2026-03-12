@@ -425,5 +425,16 @@ void OS_SIM_LeaveCriticalSection(void);
   #define SEGGER_RTT_UNLOCK()              // Unlock RTT (nestable) (i.e. enable previous interrupt lock state)
 #endif
 
+
+/* ==================================================================== */
+/* 强制将 RTT 控制块和缓冲区放置在非 Cache 区域 (RAM_D2)                  */
+/* 配合 STM32H743VITX_FLASH.ld 中的 .rtt_memory 段使用                  */
+/* ==================================================================== */
+#define SEGGER_RTT_SECTION          ".rtt_memory"
+#define SEGGER_RTT_BUFFER_SECTION   ".rtt_memory"
+
+/* >>>>> 新增：彻底关闭底层对汇编优化函数的宏重定向 <<<<< */
+#define RTT_USE_ASM                 0
+
 #endif
 /*************************** End of file ****************************/
