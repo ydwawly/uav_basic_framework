@@ -1,0 +1,7 @@
+void OnProjectLoad(void) {
+  Project.SetDevice("STM32H743VI");
+  Project.SetHostIF("USB");
+  Project.SetTargetIF("SWD");
+  Project.SetTIFSpeed("4000");
+  File.Open("D:/myFiles/RM/uav_basic_framework/uav_baice_framework_v1.6/cmake-build-debug/uav_baice_framework_v1.6.elf");
+}

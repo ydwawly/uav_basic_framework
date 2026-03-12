@@ -1,0 +1,9 @@
+device STM32H743VI
+if SWD
+speed 4000
+r
+ClrAllBPs
+g
+sleep 100
+halt
+q

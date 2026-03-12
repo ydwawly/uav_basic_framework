@@ -1,0 +1,7 @@
+T0B98 000:001.105   SEGGER J-Link V8.74a Log File
+T0B98 000:002.061   DLL Compiled: Oct  2 2025 18:11:42
+T0B98 000:002.074   Logging started @ 2026-03-07 09:34
+T0B98 000:002.084   Process: D:\applications\Jlink\JLink_V874a\JLink.exe
+T0B98 000:002.520 - 2.094ms 
+T0B98 000:002.880 JLINK_IsOpen()
+T0B98 000:002.902 - 0.142ms returns 0x00

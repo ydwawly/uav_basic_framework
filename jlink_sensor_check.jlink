@@ -1,0 +1,13 @@
+device STM32H743VI
+if SWD
+speed 4000
+r
+loadfile D:\myFiles\RM\uav_basic_framework\uav_baice_framework_v1.6\cmake-build-debug\uav_baice_framework_v1.6.elf
+clrbp
+r
+g
+sleep 20000
+halt
+mem32 0x24007A1C 20
+mem32 0x24007AD8 1
+q

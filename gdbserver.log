@@ -1,0 +1,91 @@
+SEGGER J-Link GDB Server V8.74a Command Line Version
+
+JLinkARM.dll V8.74a (DLL compiled Oct  2 2025 18:11:42)
+
+Command line: -if SWD -speed 4000 -device STM32H743VI -port 2331 -swoport 2332 -telnetport 2333 -singlerun -nohalt
+-----GDB Server start settings-----
+GDBInit file:                  none
+GDB Server Listening port:     2331
+SWO raw output listening port: 2332
+Terminal I/O port:             2333
+Accept remote connection:      localhost only
+Generate logfile:              off
+Verify download:               off
+Init regs on start:            off
+Silent mode:                   off
+Single run mode:               on
+Target connection timeout:     0 ms
+------J-Link related settings------
+J-Link Host interface:         USB
+J-Link script:                 none
+J-Link settings file:          none
+------Target related settings------
+Target device:                 STM32H743VI
+Target device parameters:      none
+Target interface:              SWD
+Target interface speed:        4000kHz
+Target endian:                 little
+
+Connecting to J-Link...
+J-Link is connected.
+Firmware: J-Link V9 compiled Dec  8 2023 20:16:22
+Hardware: V9.70
+S/N: 602721219
+Feature(s): GDB, RDI, FlashBP, FlashDL, JFlash
+Checking target voltage...
+Target voltage: 3.30 V
+Listening on TCP/IP port 2331
+Connecting to target...
+Connected to target
+Waiting for GDB connection...Connected to 127.0.0.1
+GDB client (conn. 880) requested target.xml from GDB Server
+Reading common registers: 
+...Breakpoint (set by 'unknown') reached @ address 0x08013790
+Read register 'r0' (4 bytes) from hardware: 0x00000000
+Read register 'r1' (4 bytes) from hardware: 0x00000000
+Read register 'r2' (4 bytes) from hardware: 0x40003C00
+Read register 'r3' (4 bytes) from hardware: 0x00000000
+Read register 'r4' (4 bytes) from hardware: 0x00000033
+Read register 'r5' (4 bytes) from hardware: 0x000014E2
+Read register 'r6' (4 bytes) from hardware: 0xA5A5A5A5
+Read register 'r7' (4 bytes) from hardware: 0xA5A5A5A5
+Read register 'r8' (4 bytes) from hardware: 0xA5A5A5A5
+Read register 'r9' (4 bytes) from hardware: 0xA5A5A5A5
+Read register 'r10' (4 bytes) from hardware: 0xA5A5A5A5
+Read register 'r11' (4 bytes) from hardware: 0xA5A5A5A5
+Read register 'r12' (4 bytes) from hardware: 0x00000016
+Read register 'sp' (4 bytes) from hardware: 0x2407FFB0
+Read register 'lr' (4 bytes) from hardware: 0x0800312F
+Read register 'pc' (4 bytes) from hardware: 0x08013790
+Read register 'xpsr' (4 bytes) from hardware: 0x61000027
+Read 4 bytes @ address 0x08013790 (Data = 0x4B0EBD08)
+Reading register 'msp' = 0x2407FFB0
+Reading register 'psp' = 0x24004B60
+Reading 64 bytes @ address 0x2407FF80
+Read 4 bytes @ address 0x24007AEC (Data = 0x00000000)
+Reading 64 bytes @ address 0x24007AC0
+Received monitor command: clrbp
+Received monitor command: reset
+Resetting target
+Downloading 664 bytes @ address 0x08000000
+Downloading 63824 bytes @ address 0x080002A0
+Downloading 29948 bytes @ address 0x0800FBF0
+Downloading 11112 bytes @ address 0x080170F0
+Downloading 8 bytes @ address 0x08019C58
+Downloading 8 bytes @ address 0x08019C60
+Downloading 4 bytes @ address 0x08019C68
+Downloading 668 bytes @ address 0x08019C6C
+Writing register 'pc' = 0x08002694
+Received monitor command: clrbp
+Received monitor command: reset
+Resetting target
+Received monitor command: go
+Starting target CPU...
+Received monitor command: sleep 20000
+Sleep 20000ms
+Received monitor command: halt
+Halting target CPU...
+...Target halted (PC = 0x0801310C)
+Reading 56 bytes @ address 0x24007A24
+Read 1 bytes @ address 0x24007AE0 (Data = 0x00)
+GDB closed TCP/IP connection (Socket 880)
