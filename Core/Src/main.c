@@ -35,6 +35,7 @@
 #include "SensorHub.h"
 #include "usart_test.h"
 #include "fatfs.h"
+#include "SEGGER_SYSVIEW.h"
 #include "string.h"
 // 确保包含了您�?? log 头文件，比如 #include "bsp_log.h"
 /* USER CODE END Includes */
@@ -147,6 +148,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
+  SEGGER_SYSVIEW_Conf();  // 配置 SystemView
   BSPInit();
   SensorHub_Init();
   // AppPcTest_Init();

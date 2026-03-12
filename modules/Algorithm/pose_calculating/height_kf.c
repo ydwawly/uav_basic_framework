@@ -45,7 +45,7 @@ void Height_KF_Init(Height_KF *handle, float process_noise_accel, float process_
 
 }
 
-void Height_KF_Update(Height_KF *handle, float *accele_z, float *height_ptr, float dt)
+void Height_KF_Update(Height_KF *handle, float *accele_z, float *height_ptr, float dt,float r_noise)
 {
     // 假设矩阵存储是行优先 (Row-Major): index = row * col_num + col
 
@@ -85,7 +85,9 @@ void Height_KF_Update(Height_KF *handle, float *accele_z, float *height_ptr, flo
     // [1, 0, 0]
     float *H = handle->kf.H_data;
     H[0] = 1.0f; H[1] = 0.0f; H[2] = 0.0f;
-
+    if (height_ptr != NULL) {
+        handle->kf.R_data[0] = r_noise;
+    }
     // 4. 构造观测向量 z
     Kalman_Filter_Update(&handle->kf, accele_z, height_ptr);
 

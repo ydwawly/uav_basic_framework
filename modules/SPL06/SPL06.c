@@ -98,12 +98,16 @@ void SPL06_Init_DMA(I2C_HandleTypeDef *hi2c) {
     calib_para.C21 = ((int16_t)coef[14] << 8) | coef[15];
     calib_para.C30 = ((int16_t)coef[16] << 8) | coef[17];
 
-    calib_para.kP = 516096.0f;
+    // calib_para.kP = 516096.0f;
+    calib_para.kP = 7864320.0f;  // 8x 过采样对应的 kP（原来32x对应516096）
     calib_para.kT = 7864320.0f;
 
     // 3. 配置工作模式 (高速高精度连续采样 + 硬件中断开启)
-    SPL06_Write_Reg(SPL06_PSR_CFG, PM_RATE_4 | PM_PRC_32);
-    SPL06_Write_Reg(SPL06_TMP_CFG, TMP_RATE_4 | TMP_PRC_8 | 0x80);
+    // SPL06_Write_Reg(SPL06_PSR_CFG, PM_RATE_4 | PM_PRC_32);
+    // SPL06_Write_Reg(SPL06_TMP_CFG, TMP_RATE_4 | TMP_PRC_8 | 0x80);
+    SPL06_Write_Reg(SPL06_PSR_CFG, PM_RATE_16 | PM_PRC_8);       // 16Hz, 8x
+    SPL06_Write_Reg(SPL06_TMP_CFG, TMP_RATE_16 | TMP_PRC_8 | 0x80); // 16Hz, 8x
+
     SPL06_Write_Reg(SPL06_CFG_REG, 0x80 | 0x20 | 0x10 | SPL06_CFG_P_SHIFT);
     SPL06_Write_Reg(SPL06_MEAS_CFG, MEAS_CTRL_ContinuousPressTemp);
 
@@ -153,4 +157,16 @@ void SPL06_Data_Handler(void) {
     if (spl06_data_pub != NULL) {
         PubPushFromPool(spl06_data_pub, &alt_data);
     }
+}
+
+/**
+ * @brief 强制重置气压计地面零点
+ * @note  飞控应用层应该在"无人机解锁(Arming)"瞬间调用此函数
+ */
+void SPL06_Reset_Zero_Datum(void) {
+    // 将标志位置 0，让数据处理状态机重新采集接下来的 50 帧作为新基准
+    alt_data.is_calibrated = 0;
+    calib_count = 0;
+    sum_pressure = 0.0f;
+    alt_data.filtered_alt = 0.0f;
 }

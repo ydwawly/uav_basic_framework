@@ -21,6 +21,7 @@
 #include "height_kf.h"
 // 假设包含定义了 UAV_Altitude_Data_t 的头文件
 #include "SPL06.h"
+#include "TFmini_Plus.h"
 
 static Subscriber_t *bmi088_data_sub;
 static Publisher_t *imu_data_pub;
@@ -29,7 +30,16 @@ static BMI088_Data_t bmi088_recv_data;
 // 新增：气压计订阅与高度滤波句柄
 static Subscriber_t *spl06_data_sub;
 static UAV_Altitude_Data_t spl06_recv_data;
+static TFminiPlus_Data_t tfmini_recv_data;
+static Subscriber_t *tfmini_data_sub = NULL;
 static Height_KF height_kf_handle;
+static uint8_t height_kf_divider = 0;
+static float height_dt_accum = 0.0f;
+static float acc_z_accum = 0.0f;
+static uint8_t acc_z_count = 0;
+float process_noise_accel = 2.0f,measure_noise_height = 0.1f,process_noise_bias = 1e-5f;
+float measure_noise_baro  = 2.0f;
+float measure_noise_lidar = 0.05f;
 // 用于获取两次采样之间的时间间隔
 static uint32_t INS_DWT_Count = 0;
 static float dt = 0, t = 0;
@@ -85,10 +95,11 @@ void INS_Init(void)
 {
     bmi088_data_sub = SubRegister("bmi088_data", sizeof(BMI088_Data_t));
     spl06_data_sub = SubRegister("spl06_data", sizeof(UAV_Altitude_Data_t));
+    tfmini_data_sub = SubRegister("tfmini_data", sizeof(TFminiPlus_Data_t));
     float init_quaternion[4] = {0};
     InitQuaternion(init_quaternion);
     IMU_EKF_Init(&IMU_EKF_handle,init_quaternion ,Q,R);
-    Height_KF_Init(&height_kf_handle, 2.0f, 1e-5f, 0.1f);
+    Height_KF_Init(&height_kf_handle, process_noise_accel, 1e-5f, measure_noise_lidar);
     DWT_GetDeltaT(&INS_DWT_Count);
     PT1_Filter_Init(&BIM088_Gyro_Filter[0], 90.0f);
     PT1_Filter_Init(&BIM088_Gyro_Filter[1], 90.0f);
@@ -145,21 +156,39 @@ void INS_Task(void)
 
         // 零阻塞尝试获取气压计新数据。返回 1 说明气压计更新了，返回 0 说明仍是旧数据
         uint8_t has_new_baro = SubCopyMessage(spl06_data_sub, (void *)&spl06_recv_data, 0);
+        uint8_t has_new_tfmini = SubCopyMessage(tfmini_data_sub, (void *)&tfmini_recv_data, 0);
         float acc_z_up = INS_data.MotionAccel_n[IMU_Z];
-
+        height_dt_accum += dt;
+        acc_z_accum += acc_z_up;
+        acc_z_count++;
+        height_kf_divider++;
         // 只有气压计完成地面零点校准锁定后，才启动高度融合
-        if (spl06_recv_data.is_calibrated) {
+        if (height_kf_divider >= 5) {
+            float avg_acc_z = acc_z_accum / (float)acc_z_count;
 
-            // 提取 Z 轴向上的加速度分量 (FRD 坐标系 Z 轴朝下，故取反)
+            float *measure_ptr = NULL;  // 指向当前要使用的高度数据
+            float current_r = measure_noise_baro; // 默认 R 矩阵
 
-            if (has_new_baro == 1) {
-                Height_KF_Update(&height_kf_handle, &acc_z_up, &spl06_recv_data.relative_alt, dt);
-            } else {
-                Height_KF_Update(&height_kf_handle, &acc_z_up, NULL, dt);
+            // 【核心调度逻辑：优先级决策】
+            // 优先级 1：激光雷达 (假设量程 0.05m ~ 8.0m 内认为数据有效)
+            if (has_new_tfmini && tfmini_recv_data.distance > 0.05 && tfmini_recv_data.distance < 8.0 && tfmini_recv_data.is_valid == 1) {
+                measure_ptr = &tfmini_recv_data.distance;
+                current_r = measure_noise_lidar; // 赋予极高的信任
             }
-        } else {
-            // 校准未完成，仅做预测，积累零偏估计
-            Height_KF_Update(&height_kf_handle, &acc_z_up, NULL, dt);
+            // 优先级 2：气压计 (激光雷达失效或超出量程时，退化为气压计定高)
+            else if (has_new_baro && spl06_recv_data.is_calibrated) {
+                measure_ptr = &spl06_recv_data.relative_alt;
+                current_r = measure_noise_baro;  // 赋予较低的信任
+            }
+            // Fallback：如果两个都没新数据，measure_ptr 依然是 NULL，KF 内部只会用加速度计做 Predict
+
+            // 执行卡尔曼滤波，动态传入测量值和对应的噪声矩阵 R
+            Height_KF_Update(&height_kf_handle, &avg_acc_z, measure_ptr, height_dt_accum, current_r);
+
+            height_kf_divider = 0;
+            height_dt_accum = 0.0f;
+            acc_z_accum = 0.0f;
+            acc_z_count = 0;
         }
 
         PubPushFromPool(imu_data_pub,&INS_data);

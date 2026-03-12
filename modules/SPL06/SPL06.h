@@ -17,6 +17,14 @@
 #define PM_PRC_32           5
 #define TMP_RATE_4          (2<<4)
 #define TMP_PRC_8           3
+
+// 新增宏定义
+#define PM_RATE_16          (4<<4)   // 16 Hz 气压采样率
+#define PM_PRC_8            3        // 8x 过采样 (kP = 7864320)
+#define TMP_RATE_16         (4<<4)   // 16 Hz 温度采样率
+#define TMP_PRC_8           3        // 8x 过采样 (不变)
+
+
 #define MEAS_CTRL_ContinuousPressTemp 0x07
 #define SPL06_CFG_P_SHIFT   0x04
 
@@ -46,5 +54,9 @@ typedef struct {
 void SPL06_Init_DMA(I2C_HandleTypeDef *hi2c); // 初始化并注册发布者
 void SPL06_Read_DMA_Start(void);              // 触发一次 DMA 读取
 void SPL06_Data_Handler(void);                // DMA 接收完成后的数据处理与发布
-
+/**
+ * @brief 强制重置气压计地面零点
+ * @note  飞控应用层应该在"无人机解锁(Arming)"瞬间调用此函数
+ */
+void SPL06_Reset_Zero_Datum(void);
 #endif // UAV_BAICE_FRAMEWORK_V1_4_SPL06_H

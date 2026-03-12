@@ -21,6 +21,6 @@ typedef struct {
 
 
 void Height_KF_Init(Height_KF *handle, float process_noise_accel, float process_noise_bias, float measure_noise_height);
-void Height_KF_Update(Height_KF *handle, float *accele_z, float *height_ptr, float dt);
+void Height_KF_Update(Height_KF *handle, float *accele_z, float *height_ptr, float dt,float r_noise);
 
 #endif //UAV_BAICE_FRAMEWORK_V1_4_HEIGHT_KF_H

@@ -37,6 +37,7 @@
 #include "Monitor.h"
 #include "sdmmc.h"
 #include "SD_Card.h"
+#include "SEGGER_SYSVIEW.h"
 #include "SensorHub.h"
 #include "spi.h"
 #include "SPL06.h"
@@ -270,6 +271,7 @@ void MX_FREERTOS_Init(void) {
 void StartDefaultTask(void *argument)
 {
   /* init code for USB_DEVICE */
+    SEGGER_SYSVIEW_Start();//启动
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN StartDefaultTask */
   /* Infinite loop */

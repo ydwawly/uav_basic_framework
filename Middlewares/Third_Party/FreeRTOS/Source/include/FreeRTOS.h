@@ -133,8 +133,10 @@ extern "C" {
 #endif
 
 #ifndef INCLUDE_xTaskGetIdleTaskHandle
-	#define INCLUDE_xTaskGetIdleTaskHandle 0
+	#define INCLUDE_xTaskGetIdleTaskHandle 1
 #endif
+
+#define INCLUDE_pxTaskGetStackStart   1
 
 #ifndef INCLUDE_xTaskAbortDelay
 	#define INCLUDE_xTaskAbortDelay 0
