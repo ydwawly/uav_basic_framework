@@ -518,7 +518,6 @@ void UART8_IRQHandler(void)
   /* USER CODE END UART8_IRQn 0 */
   HAL_UART_IRQHandler(&huart8);
   /* USER CODE BEGIN UART8_IRQn 1 */
-
   /* USER CODE END UART8_IRQn 1 */
 }
 
