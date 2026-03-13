@@ -55,7 +55,7 @@ endif ()
 include_directories(Core/Inc Drivers/STM32H7xx_HAL_Driver/Inc Drivers/STM32H7xx_HAL_Driver/Inc/Legacy Middlewares/Third_Party/FreeRTOS/Source/include Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2 Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F Drivers/CMSIS/Device/ST/STM32H7xx/Include Drivers/CMSIS/Include
         bsp bsp/bsp_usart bsp/bsp_dwt bsp/bsp_usb bsp/bsp_log
         modules modules/BMI088 modules/Message_center modules/Algorithm/pose_calculating modules/Algorithm/Filter modules/IMU modules/BMI270 modules/Algorithm/PID modules/Algorithm/User_math modules/SPL06 modules/SD_Card modules/QMC5883L
-        modules/Remote/Sbus modules/TFmini_Plus modules/Remote/ibus modules/Peripheral_device_testing modules/Monitor
+        modules/Remote/Sbus modules/TFmini_Plus modules/Remote/ibus modules/Peripheral_device_testing modules/Monitor  modules/Mavlink modules/Mavlink/mavlink_user modules/Mavlink/c_library_v2-master
         application application/quadrotor application/SensorHub application/uav_cmd
         USB_DEVICE USB_DEVICE/App USB_DEVICE/Target
         FATFS FATFS/App FATFS/Target

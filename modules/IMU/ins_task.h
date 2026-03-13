@@ -5,6 +5,9 @@
 #ifndef UAV_BAICE_FRAMEWORK_V1_2_INS_TASK_H
 #define UAV_BAICE_FRAMEWORK_V1_2_INS_TASK_H
 
+#define NOTIFY_BIT_IMU_READY (1 << 0)
+#define NOTIFY_BIT_BMI270_READY (1 << 1) // BMI270 (副心跳，我们实际上在 Task 里可以忽略它的唤醒)
+
 typedef struct
 {
     float Gyro[3];
@@ -25,5 +28,5 @@ typedef struct
 
 void INS_Init(void);
 /* 注意以1kHz的频率运行此任务 */
-void INS_Task(void);
+void INS_Task(void *argument);
 #endif //UAV_BAICE_FRAMEWORK_V1_2_INS_TASK_H

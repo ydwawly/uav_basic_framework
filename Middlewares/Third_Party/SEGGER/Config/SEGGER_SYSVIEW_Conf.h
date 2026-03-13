@@ -100,7 +100,7 @@ Additional information:
 
 /* >>>>> 新增：禁止 SystemView 使用底层汇编优化函数，强制回退到 C 语言版本 <<<<< */
 #define SEGGER_SYSVIEW_USE_RTT_ASM    0
-
+#define SEGGER_SYSVIEW_RECORD_SYSTICK  0
 #endif  // SEGGER_SYSVIEW_CONF_H
 
 /*************************** End of file ****************************/

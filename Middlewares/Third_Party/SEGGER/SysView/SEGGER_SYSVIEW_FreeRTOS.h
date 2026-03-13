@@ -326,6 +326,81 @@ void SYSVIEW_SendTaskInfo (U32 TaskID, const char* sName, unsigned Prio, U32 Sta
 }
 #endif
 
+// /* =========================
+//    Disable high-frequency events
+//    ========================= */
+//
+// #undef traceTASK_NOTIFY
+// #define traceTASK_NOTIFY()
+//
+// #undef traceTASK_NOTIFY_FROM_ISR
+// #define traceTASK_NOTIFY_FROM_ISR()
+//
+// #undef traceTASK_NOTIFY_WAIT
+// #define traceTASK_NOTIFY_WAIT()
+//
+// #undef traceQUEUE_SEND
+// #define traceQUEUE_SEND(pxQueue)
+//
+// #undef traceQUEUE_RECEIVE
+// #define traceQUEUE_RECEIVE(pxQueue)
+//
+// #undef traceQUEUE_SEND_FROM_ISR
+// #define traceQUEUE_SEND_FROM_ISR(pxQueue)
+//
+// #undef traceQUEUE_RECEIVE_FROM_ISR
+// #define traceQUEUE_RECEIVE_FROM_ISR(pxQueue)
+//
+// 只禁用真正存在的、且高频的宏
+/* ========================================
+   禁用高频事件 - 完整版
+   ======================================== */
+
+// ---- 队列操作 ----
+#undef traceQUEUE_SEND
+#define traceQUEUE_SEND(pxQueue)
+
+#undef traceQUEUE_RECEIVE
+#define traceQUEUE_RECEIVE(pxQueue)
+
+#undef traceQUEUE_SEND_FROM_ISR
+#define traceQUEUE_SEND_FROM_ISR(pxQueue)
+
+#undef traceQUEUE_RECEIVE_FROM_ISR
+#define traceQUEUE_RECEIVE_FROM_ISR(pxQueue)
+
+#undef traceQUEUE_SEND_FAILED
+#define traceQUEUE_SEND_FAILED(pxQueue)
+
+#undef traceQUEUE_RECEIVE_FAILED
+#define traceQUEUE_RECEIVE_FAILED(pxQueue)
+
+#undef traceQUEUE_SEND_FROM_ISR_FAILED
+#define traceQUEUE_SEND_FROM_ISR_FAILED(pxQueue)
+
+#undef traceQUEUE_RECEIVE_FROM_ISR_FAILED
+#define traceQUEUE_RECEIVE_FROM_ISR_FAILED(pxQueue)
+
+// ---- 信号量 ----
+#undef traceQUEUE_SEMAPHORE_RECEIVE
+#define traceQUEUE_SEMAPHORE_RECEIVE(pxQueue)
+
+// ---- 任务通知（全部） ----
+#undef traceTASK_NOTIFY
+#define traceTASK_NOTIFY()
+
+#undef traceTASK_NOTIFY_FROM_ISR
+#define traceTASK_NOTIFY_FROM_ISR()
+
+#undef traceTASK_NOTIFY_WAIT
+#define traceTASK_NOTIFY_WAIT()
+
+#undef traceTASK_NOTIFY_TAKE
+#define traceTASK_NOTIFY_TAKE()
+
+#undef traceTASK_NOTIFY_GIVE_FROM_ISR
+#define traceTASK_NOTIFY_GIVE_FROM_ISR()
+
 #endif
 
 /*************************** End of file ****************************/

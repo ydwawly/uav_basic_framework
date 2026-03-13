@@ -5,10 +5,18 @@
 #include "bsp_log.h"
 #include <math.h>
 #include <string.h>
+
+#include "ins_task.h"
 #include "message_center.h"
 #include "PT1_Filter.h"
 
 static BMI088_Data_t bmi088_data;
+// 1. 定义两个一模一样的结构体，作为 Ping-Pong 缓冲区
+static BMI088_Data_t bmi088_pingpong_buf[2];
+
+// 2. 定义两个极其关键的游标 (必须加 volatile，防止编译器优化)
+static volatile uint8_t write_idx = 0;  // DMA ISR 当前正在写入的缓冲区 (0或1)
+static volatile uint8_t ready_idx = 0;  // 已经完整写完，可供 Task 读取的缓冲区 (0或1)
 static Publisher_t *bmi088_data_pub;
 SPI_HandleTypeDef *bmi_spi;
 
@@ -119,74 +127,142 @@ uint8_t BMI088_Init(SPI_HandleTypeDef *hspi)
 
 void BMI088_Read_DMA_Start(void)
 {
-    if(bmi088_dma_state != 0) return; // 防止重入
+    if(bmi088_dma_state != 0) return;
 
-    // 1. 开始读取 Gyro
     bmi088_dma_state = 1;
     BMI088_GYRO_NS_L();
-    HAL_SPI_TransmitReceive_DMA(bmi_spi, gyro_tx, gyro_rx, 7);
+    // 加上判断，如果启动失败，立刻复位状态！
+    if (HAL_SPI_TransmitReceive_DMA(bmi_spi, gyro_tx, gyro_rx, 7) != HAL_OK)
+    {
+        BMI088_GYRO_NS_H();
+        bmi088_dma_state = 0;
+    }
 }
 
-void BMI088_DMA_Callback(void)
+// void BMI088_DMA_Callback(void)
+// {
+//     static int16_t raw;
+//
+//     if (bmi088_dma_state == 1) // Gyro 完成
+//     {
+//         BMI088_GYRO_NS_H(); // 拉高 Gyro CS
+//
+//         // 2. 紧接着读取 Accel
+//         bmi088_dma_state = 2;
+//         BMI088_ACCEL_NS_L();
+//         HAL_SPI_TransmitReceive_DMA(bmi_spi, accel_tx, accel_rx, 8);
+//
+//         // 处理 Gyro 数据 (Rx[0]是垃圾数据, 数据从Rx[1]开始)
+//         // 使用宏定义的离线 Offset 进行修正
+//         // 处理并修正 Gyro 偏置
+//         raw = (int16_t)((gyro_rx[2] << 8) | gyro_rx[1]);
+//         bmi088_data.Gyro[IMU_Y] = -(raw * BMI088_GYRO_2000_SEN - bmi088_data.GyroOffset[IMU_Y]);
+//
+//         raw = (int16_t)((gyro_rx[4] << 8) | gyro_rx[3]);
+//         bmi088_data.Gyro[IMU_X] = -(raw * BMI088_GYRO_2000_SEN - bmi088_data.GyroOffset[IMU_X]);
+//
+//         raw = (int16_t)((gyro_rx[6] << 8) | gyro_rx[5]);
+//         bmi088_data.Gyro[IMU_Z] = -(raw * BMI088_GYRO_2000_SEN - bmi088_data.GyroOffset[IMU_Z]);
+//     }
+//     else if (bmi088_dma_state == 2) // Accel 完成
+//     {
+//         BMI088_ACCEL_NS_H(); // 拉高 Accel CS
+//         bmi088_dma_state = 0; // 结束
+//
+//         // 处理并修正 Accel Scale (注意对应 X/Y/Z)
+//         raw = (int16_t)((accel_rx[3] << 8) | accel_rx[2]);
+//         bmi088_data.Accel[IMU_Y] = (raw * BMI088_ACCEL_6G_SEN) * bmi088_data.AccelScale;
+//
+//         raw = (int16_t)((accel_rx[5] << 8) | accel_rx[4]);
+//         bmi088_data.Accel[IMU_X] = (raw * BMI088_ACCEL_6G_SEN) * bmi088_data.AccelScale;
+//
+//         raw = (int16_t)((accel_rx[7] << 8) | accel_rx[6]);
+//         bmi088_data.Accel[IMU_Z] = (raw * BMI088_ACCEL_6G_SEN) * bmi088_data.AccelScale;
+//
+//         // 可选：在此处释放信号量给解算任务
+//     }
+//     // 如果角速度连续 50 次完全不变化，判定为传感器失效
+//     if (fabs(bmi088_data.Gyro[0] - last_gyro_x) < 0.000001f) {
+//         stuck_count++;
+//     } else {
+//         stuck_count = 0;
+//         bmi088_data.healthy = 1;
+//     }
+//     last_gyro_x = bmi088_data.Gyro[0];
+//
+//     if (stuck_count > 50) {
+//         bmi088_data.healthy = 0; // 标记传感器不健康，飞控应进入紧急降落模式
+//     }
+//     if (bmi088_data.healthy ==1) {
+//         PubPushFromPool(bmi088_data_pub, &bmi088_data);
+//     }
+// }
+void BMI088_DMA_ISR_Handler(BaseType_t *HigherPriorityTaskWoken)
 {
     static int16_t raw;
 
     if (bmi088_dma_state == 1) // Gyro 完成
     {
-        BMI088_GYRO_NS_H(); // 拉高 Gyro CS
+        BMI088_GYRO_NS_H();
 
-        // 2. 紧接着读取 Accel
+        // 瞬间启动 Accel DMA
         bmi088_dma_state = 2;
         BMI088_ACCEL_NS_L();
-        HAL_SPI_TransmitReceive_DMA(bmi_spi, accel_tx, accel_rx, 8);
+        if (HAL_SPI_TransmitReceive_DMA(bmi_spi, accel_tx, accel_rx, 8) != HAL_OK)
+        {
+            BMI088_ACCEL_NS_H();
+            bmi088_dma_state = 0; // 失败立刻复位，等下一个 Gyro EXTI 重新开始
+        }
 
-        // 处理 Gyro 数据 (Rx[0]是垃圾数据, 数据从Rx[1]开始)
-        // 使用宏定义的离线 Offset 进行修正
-        // 处理并修正 Gyro 偏置
+        // 利用等待 DMA 的间隙，立刻将 Gyro 数据解析到当前的 write_idx 缓冲区中
         raw = (int16_t)((gyro_rx[2] << 8) | gyro_rx[1]);
-        bmi088_data.Gyro[IMU_Y] = -(raw * BMI088_GYRO_2000_SEN - bmi088_data.GyroOffset[IMU_Y]);
-
+        bmi088_pingpong_buf[write_idx].Gyro[IMU_Y] = -(raw * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[IMU_Y]);
         raw = (int16_t)((gyro_rx[4] << 8) | gyro_rx[3]);
-        bmi088_data.Gyro[IMU_X] = -(raw * BMI088_GYRO_2000_SEN - bmi088_data.GyroOffset[IMU_X]);
-
+        bmi088_pingpong_buf[write_idx].Gyro[IMU_X] = -(raw * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[IMU_X]);
         raw = (int16_t)((gyro_rx[6] << 8) | gyro_rx[5]);
-        bmi088_data.Gyro[IMU_Z] = -(raw * BMI088_GYRO_2000_SEN - bmi088_data.GyroOffset[IMU_Z]);
+        bmi088_pingpong_buf[write_idx].Gyro[IMU_Z] = -(raw * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[IMU_Z]);
     }
     else if (bmi088_dma_state == 2) // Accel 完成
     {
-        BMI088_ACCEL_NS_H(); // 拉高 Accel CS
-        bmi088_dma_state = 0; // 结束
+        BMI088_ACCEL_NS_H();
+        bmi088_dma_state = 0;
 
-        // 处理并修正 Accel Scale (注意对应 X/Y/Z)
+        // 解析 Accel 数据到当前的 write_idx 缓冲区中
         raw = (int16_t)((accel_rx[3] << 8) | accel_rx[2]);
-        bmi088_data.Accel[IMU_Y] = (raw * BMI088_ACCEL_6G_SEN) * bmi088_data.AccelScale;
-
+        bmi088_pingpong_buf[write_idx].Accel[IMU_Y] = (raw * BMI088_ACCEL_6G_SEN) * bmi088_pingpong_buf[write_idx].AccelScale;
         raw = (int16_t)((accel_rx[5] << 8) | accel_rx[4]);
-        bmi088_data.Accel[IMU_X] = (raw * BMI088_ACCEL_6G_SEN) * bmi088_data.AccelScale;
-
+        bmi088_pingpong_buf[write_idx].Accel[IMU_X] = (raw * BMI088_ACCEL_6G_SEN) * bmi088_pingpong_buf[write_idx].AccelScale;
         raw = (int16_t)((accel_rx[7] << 8) | accel_rx[6]);
-        bmi088_data.Accel[IMU_Z] = (raw * BMI088_ACCEL_6G_SEN) * bmi088_data.AccelScale;
+        bmi088_pingpong_buf[write_idx].Accel[IMU_Z] = (raw * BMI088_ACCEL_6G_SEN) * bmi088_pingpong_buf[write_idx].AccelScale;
 
-        // 可选：在此处释放信号量给解算任务
-    }
-    // 如果角速度连续 50 次完全不变化，判定为传感器失效
-    if (fabs(bmi088_data.Gyro[0] - last_gyro_x) < 0.000001f) {
-        stuck_count++;
-    } else {
-        stuck_count = 0;
-        bmi088_data.healthy = 1;
-    }
-    last_gyro_x = bmi088_data.Gyro[0];
+        // 健康状态更新
+        bmi088_pingpong_buf[write_idx].healthy = 1;
 
-    if (stuck_count > 50) {
-        bmi088_data.healthy = 0; // 标记传感器不健康，飞控应进入紧急降落模式
-    }
-    if (bmi088_data.healthy ==1) {
-        PubPushFromPool(bmi088_data_pub, &bmi088_data);
+        // ==========================================
+        // 无锁并发魔法时刻 (Lock-free Magic)
+        // ==========================================
+        // 1. 将刚刚写完的缓冲区标记为“最新可用”
+        ready_idx = write_idx;
+
+        // 2. 翻转写入指针，让下一次 DMA 写入另一个缓冲区
+        // 如果当前是 0，1-0=1；如果是 1，1-1=0。极其高效。
+        write_idx = 1 - write_idx;
+
+        // 3. 唤醒 INS_Task 来读取数据
+        if (IMU_Task_Handle != NULL) {
+            xTaskNotifyFromISR(IMU_Task_Handle, NOTIFY_BIT_IMU_READY, eSetBits, HigherPriorityTaskWoken);
+        }
     }
 }
 
+void BMI088_Get_RawData(BMI088_Data_t *out_data)
+{
+    // 1. 获取当前最新准备好的缓冲区索引
+    uint8_t current_read_idx = ready_idx;
 
+    // 2. 直接进行结构体内存拷贝
+    *out_data = bmi088_pingpong_buf[current_read_idx];
+}
 // ================= 内部辅助函数 (仅初始化用) =================
 // 简单的阻塞写
 // ================= 内部辅助函数 =================

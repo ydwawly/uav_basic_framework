@@ -1,6 +1,8 @@
 #ifndef BMI088DRIVER_H
 #define BMI088DRIVER_H
 
+#include "FreeRTOS.h"
+#include "task.h"
 #include "stdint.h"
 #include "main.h"
 
@@ -34,6 +36,8 @@ typedef enum {
 } BMI088_Status_e;
 
 
+extern TaskHandle_t IMU_Task_Handle;
+
 /**
  * @brief 初始化 BMI088 (阻塞式, 仅上电运行一次)
  */
@@ -48,5 +52,6 @@ void BMI088_Read_DMA_Start(void);
  * @brief DMA 回调 (在 HAL_SPI_TxRxCpltCallback 中调用)
  */
 void BMI088_DMA_Callback(void);
-
+void BMI088_DMA_ISR_Handler(BaseType_t *HigherPriorityTaskWoken);
+void BMI088_Get_RawData(BMI088_Data_t *out_data);
 #endif

@@ -1,0 +1,8 @@
+//
+// Created by Administrator on 2026/3/13.
+//
+
+#ifndef UAV_BAICE_FRAMEWORK_V1_6_MAVLINK_USER_H
+#define UAV_BAICE_FRAMEWORK_V1_6_MAVLINK_USER_H
+
+#endif //UAV_BAICE_FRAMEWORK_V1_6_MAVLINK_USER_H

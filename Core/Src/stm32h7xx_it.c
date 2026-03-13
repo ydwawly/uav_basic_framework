@@ -542,12 +542,12 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 
   if (hspi->Instance == SPI2) // 假设BMI088接在SPI2
   {
-    xTaskNotifyFromISR(SensorHub_Task_Handle,NOTIFY_BIT_BMI088,eSetBits,&HigherPriorityTaskWoken);
+    BMI088_DMA_ISR_Handler(&HigherPriorityTaskWoken);
     // BMI088_DMA_Callback();
   }
-  if (hspi->Instance == SPI3) // 假设BMI088接在SPI2
+  if (hspi->Instance == SPI3)
   {
-    xTaskNotifyFromISR(SensorHub_Task_Handle,NOTIFY_BIT_BMI270,eSetBits,&HigherPriorityTaskWoken);
+    BMI270_DMA_ISR_Handler(&HigherPriorityTaskWoken);
     // BMI270_DMA_Callback();
   }
   portYIELD_FROM_ISR(HigherPriorityTaskWoken);
@@ -560,7 +560,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   {
     case SPL06_INT_Pin:
       // SPL06_Read_DMA_Start();
+    if (SensorHub_Task_Handle != NULL)
+    {
       xTaskNotifyFromISR(SensorHub_Task_Handle, NOTIFY_BIT_SPL06_TRIG, eSetBits, &xWoken);
+    }
       break;
     case GYRO_INT_Pin:
       BMI088_Read_DMA_Start();
@@ -584,7 +587,10 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
   BaseType_t xWoken = pdFALSE;
   if (hi2c->Instance == I2C2)
   {
+    if (SensorHub_Task_Handle != NULL)
+    {
       xTaskNotifyFromISR(SensorHub_Task_Handle,NOTIFY_BIT_I2C_DMA_DONE,eSetBits,&xWoken);
+    }
   }
   portYIELD_FROM_ISR(xWoken);
 }

@@ -59,15 +59,15 @@ void SensorHub_Task(void *pvParameters)
 
         // ==================== 原有的处理逻辑 START ====================
         // IMU 最高优先级，1kHz 心跳
-        if (notifyBits & NOTIFY_BIT_BMI088)
-        {
-            BMI088_DMA_Callback();
-        }
-
-        if(notifyBits & NOTIFY_BIT_BMI270)
-        {
-            BMI270_DMA_Callback();
-        }
+        // if (notifyBits & NOTIFY_BIT_BMI088)
+        // {
+        //     BMI088_DMA_Callback();
+        // }
+        //
+        // if(notifyBits & NOTIFY_BIT_BMI270)
+        // {
+        //     BMI270_DMA_Callback();
+        // }
 
         // --- 2. SBUS 遥控器处理 (UART) ---
         if (notifyBits & NOTIFY_BIT_REMOTE)

@@ -10,8 +10,8 @@
 #include "message_center.h"
 #include <math.h>
 #include <string.h>
-
 #include "BMI088driver.h"
+
 
 // ================= 宏定义与变量 =================
 #define BMI270_ACC_X_LSB_REG    0x0C
@@ -23,6 +23,9 @@
 #define DEG_TO_RAD           0.01745329252f
 
 static BMI270_Data_t bmi270_data;
+static BMI270_Data_t bmi270_pingpong_buf[2];
+static volatile uint8_t bmi270_write_idx = 0;
+static volatile uint8_t bmi270_ready_idx = 0;
 static Publisher_t *bmi270_data_pub;
 SPI_HandleTypeDef *bmi270_spi;
 
@@ -92,11 +95,82 @@ void BMI270_Read_DMA_Start(void)
 // ================= 3. DMA 回调处理 =================
 // 需在 HAL_SPI_TxRxCpltCallback 中调用
 // ================= 3. DMA 回调处理 (修正版) =================
-void BMI270_DMA_Callback(void)
+// void BMI270_DMA_Callback(void)
+// {
+//     // 使用 float 临时变量，防止精度丢失
+//     static float acc_phys[3];
+//     static float gyr_phys[3];
+//     static float last_gyro_x = 0;
+//     static uint32_t stuck_count = 0;
+//
+//     if (bmi270_dma_busy)
+//     {
+//         BMI270_CS_H();
+//         bmi270_dma_busy = 0;
+//
+//         // --- 1. 原始数据拼接 (纯整数操作) ---
+//         int16_t raw_acc_x = (int16_t)((bmi270_rx[3] << 8) | bmi270_rx[2]);
+//         int16_t raw_acc_y = (int16_t)((bmi270_rx[5] << 8) | bmi270_rx[4]);
+//         int16_t raw_acc_z = (int16_t)((bmi270_rx[7] << 8) | bmi270_rx[6]);
+//
+//         int16_t raw_gyr_x = (int16_t)((bmi270_rx[9] << 8)  | bmi270_rx[8]);
+//         int16_t raw_gyr_y = (int16_t)((bmi270_rx[11] << 8) | bmi270_rx[10]);
+//         int16_t raw_gyr_z = (int16_t)((bmi270_rx[13] << 8) | bmi270_rx[12]);
+//
+//         // --- 2. 物理量转换与坐标系对齐 ---
+//         // 假设板载坐标系定义：
+//         // BMI270 X -> 机体 Y
+//         // BMI270 Y -> 机体 X
+//         // BMI270 Z -> 机体 Z
+//
+//         // Accel 处理 (单位 m/s^2 或 g，取决于你 scale 的定义，通常推荐归一化为 m/s^2)
+//         // 这里的 Scale 在校准时被计算为 9.8/Norm，所以乘出来直接是 m/s^2
+//         bmi270_data.Accel[IMU_Y] = raw_acc_x * BMI270_ACC_SEN * bmi270_data.AccelScale;
+//         bmi270_data.Accel[IMU_X] = raw_acc_y * BMI270_ACC_SEN * bmi270_data.AccelScale;
+//         bmi270_data.Accel[IMU_Z] = raw_acc_z * BMI270_ACC_SEN * bmi270_data.AccelScale;
+//
+//         // Gyro 处理 (核心修正：先转物理值，再减 Offset，最后转 Rad)
+//         // 临时变量存储 deg/s
+//         float gyr_deg_x = raw_gyr_x * BMI270_GYRO_SEN_DEG;
+//         float gyr_deg_y = raw_gyr_y * BMI270_GYRO_SEN_DEG;
+//         float gyr_deg_z = raw_gyr_z * BMI270_GYRO_SEN_DEG;
+//
+//         // 减去零偏 (注意：Offset 也是 deg/s 单位)
+//         // 坐标系映射时要注意 Offset 的对应关系！
+//         // 假设 Offset[0] 是 BMI_X 的零偏
+//         float clean_gyr_x = gyr_deg_x - bmi270_data.GyroOffset[0];
+//         float clean_gyr_y = gyr_deg_y - bmi270_data.GyroOffset[1];
+//         float clean_gyr_z = gyr_deg_z - bmi270_data.GyroOffset[2];
+//
+//         // 赋值给数据结构 (转为 rad/s 用于控制)
+//         bmi270_data.Gyro[IMU_Y] =  -clean_gyr_x * DEG_TO_RAD; // 板载X对应机体Y
+//         bmi270_data.Gyro[IMU_X] =  -clean_gyr_y * DEG_TO_RAD; // 板载Y对应机体X
+//         bmi270_data.Gyro[IMU_Z] =  -clean_gyr_z * DEG_TO_RAD; // 板载Z对应机体Z
+//
+//         // 调试用的 deg/s 数据
+//         bmi270_data.GyroDeg[0] = clean_gyr_x;
+//         bmi270_data.GyroDeg[1] = clean_gyr_y;
+//         bmi270_data.GyroDeg[2] = clean_gyr_z;
+//
+//         // --- 3. 健康检测 ---
+//         // 检查是否卡死 (Stuck)
+//         if (fabsf(bmi270_data.Gyro[IMU_X] - last_gyro_x) < 0.000001f) stuck_count++;
+//         else stuck_count = 0;
+//         last_gyro_x = bmi270_data.Gyro[IMU_X];
+//
+//         // 100ms 无变化视为故障 (1kHz * 100)
+//         if (stuck_count > 100) bmi270_data.healthy = 0;
+//         else bmi270_data.healthy = 1;
+//
+//         // --- 4. 发布数据 ---
+//         if (bmi270_data_pub) { // 判空，防止未注册导致死机
+//              PubPushFromPool(bmi270_data_pub, &bmi270_data);
+//         }
+//     }
+// }
+// 将原来的 BMI270_DMA_Callback 改为 ISR Handler
+void BMI270_DMA_ISR_Handler(BaseType_t *HigherPriorityTaskWoken)
 {
-    // 使用 float 临时变量，防止精度丢失
-    static float acc_phys[3];
-    static float gyr_phys[3];
     static float last_gyro_x = 0;
     static uint32_t stuck_count = 0;
 
@@ -105,7 +179,7 @@ void BMI270_DMA_Callback(void)
         BMI270_CS_H();
         bmi270_dma_busy = 0;
 
-        // --- 1. 原始数据拼接 (纯整数操作) ---
+        // --- 1. 原始数据拼接 ---
         int16_t raw_acc_x = (int16_t)((bmi270_rx[3] << 8) | bmi270_rx[2]);
         int16_t raw_acc_y = (int16_t)((bmi270_rx[5] << 8) | bmi270_rx[4]);
         int16_t raw_acc_z = (int16_t)((bmi270_rx[7] << 8) | bmi270_rx[6]);
@@ -114,58 +188,58 @@ void BMI270_DMA_Callback(void)
         int16_t raw_gyr_y = (int16_t)((bmi270_rx[11] << 8) | bmi270_rx[10]);
         int16_t raw_gyr_z = (int16_t)((bmi270_rx[13] << 8) | bmi270_rx[12]);
 
+        // 获取当前正在写入的缓冲区指针（用指针让代码更干净）
+        BMI270_Data_t *curr_buf = &bmi270_pingpong_buf[bmi270_write_idx];
+
         // --- 2. 物理量转换与坐标系对齐 ---
-        // 假设板载坐标系定义：
-        // BMI270 X -> 机体 Y
-        // BMI270 Y -> 机体 X
-        // BMI270 Z -> 机体 Z
+        curr_buf->Accel[IMU_Y] = raw_acc_x * BMI270_ACC_SEN * curr_buf->AccelScale;
+        curr_buf->Accel[IMU_X] = raw_acc_y * BMI270_ACC_SEN * curr_buf->AccelScale;
+        curr_buf->Accel[IMU_Z] = raw_acc_z * BMI270_ACC_SEN * curr_buf->AccelScale;
 
-        // Accel 处理 (单位 m/s^2 或 g，取决于你 scale 的定义，通常推荐归一化为 m/s^2)
-        // 这里的 Scale 在校准时被计算为 9.8/Norm，所以乘出来直接是 m/s^2
-        bmi270_data.Accel[IMU_Y] = raw_acc_x * BMI270_ACC_SEN * bmi270_data.AccelScale;
-        bmi270_data.Accel[IMU_X] = raw_acc_y * BMI270_ACC_SEN * bmi270_data.AccelScale;
-        bmi270_data.Accel[IMU_Z] = raw_acc_z * BMI270_ACC_SEN * bmi270_data.AccelScale;
-
-        // Gyro 处理 (核心修正：先转物理值，再减 Offset，最后转 Rad)
-        // 临时变量存储 deg/s
         float gyr_deg_x = raw_gyr_x * BMI270_GYRO_SEN_DEG;
         float gyr_deg_y = raw_gyr_y * BMI270_GYRO_SEN_DEG;
         float gyr_deg_z = raw_gyr_z * BMI270_GYRO_SEN_DEG;
 
-        // 减去零偏 (注意：Offset 也是 deg/s 单位)
-        // 坐标系映射时要注意 Offset 的对应关系！
-        // 假设 Offset[0] 是 BMI_X 的零偏
-        float clean_gyr_x = gyr_deg_x - bmi270_data.GyroOffset[0];
-        float clean_gyr_y = gyr_deg_y - bmi270_data.GyroOffset[1];
-        float clean_gyr_z = gyr_deg_z - bmi270_data.GyroOffset[2];
+        float clean_gyr_x = gyr_deg_x - curr_buf->GyroOffset[0];
+        float clean_gyr_y = gyr_deg_y - curr_buf->GyroOffset[1];
+        float clean_gyr_z = gyr_deg_z - curr_buf->GyroOffset[2];
 
-        // 赋值给数据结构 (转为 rad/s 用于控制)
-        bmi270_data.Gyro[IMU_Y] =  -clean_gyr_x * DEG_TO_RAD; // 板载X对应机体Y
-        bmi270_data.Gyro[IMU_X] =  -clean_gyr_y * DEG_TO_RAD; // 板载Y对应机体X
-        bmi270_data.Gyro[IMU_Z] =  -clean_gyr_z * DEG_TO_RAD; // 板载Z对应机体Z
+        curr_buf->Gyro[IMU_Y] =  -clean_gyr_x * DEG_TO_RAD;
+        curr_buf->Gyro[IMU_X] =  -clean_gyr_y * DEG_TO_RAD;
+        curr_buf->Gyro[IMU_Z] =  -clean_gyr_z * DEG_TO_RAD;
 
-        // 调试用的 deg/s 数据
-        bmi270_data.GyroDeg[0] = clean_gyr_x;
-        bmi270_data.GyroDeg[1] = clean_gyr_y;
-        bmi270_data.GyroDeg[2] = clean_gyr_z;
+        curr_buf->GyroDeg[0] = clean_gyr_x;
+        curr_buf->GyroDeg[1] = clean_gyr_y;
+        curr_buf->GyroDeg[2] = clean_gyr_z;
 
         // --- 3. 健康检测 ---
-        // 检查是否卡死 (Stuck)
-        if (fabsf(bmi270_data.Gyro[IMU_X] - last_gyro_x) < 0.000001f) stuck_count++;
+        if (fabsf(curr_buf->Gyro[IMU_X] - last_gyro_x) < 0.000001f) stuck_count++;
         else stuck_count = 0;
-        last_gyro_x = bmi270_data.Gyro[IMU_X];
 
-        // 100ms 无变化视为故障 (1kHz * 100)
-        if (stuck_count > 100) bmi270_data.healthy = 0;
-        else bmi270_data.healthy = 1;
+        last_gyro_x = curr_buf->Gyro[IMU_X];
 
-        // --- 4. 发布数据 ---
-        if (bmi270_data_pub) { // 判空，防止未注册导致死机
-             PubPushFromPool(bmi270_data_pub, &bmi270_data);
+        if (stuck_count > 100) curr_buf->healthy = 0;
+        else curr_buf->healthy = 1;
+
+        // ==========================================
+        // 4. 无锁并发魔法时刻 (Ping-Pong Switch)
+        // ==========================================
+        bmi270_ready_idx = bmi270_write_idx;       // 标记当前这桌数据做好了
+        bmi270_write_idx = 1 - bmi270_write_idx;   // 去另一桌准备接客
+
+        // 5. 唤醒 INS_Task
+        // 确保 INS_TaskHandle 不是 NULL (任务已创建)
+        if (IMU_Task_Handle != NULL) {
+            xTaskNotifyFromISR(IMU_Task_Handle, NOTIFY_BIT_BMI270_READY, eSetBits, HigherPriorityTaskWoken);
         }
     }
 }
 
+// 提供极速读取接口
+void BMI270_Get_RawData(BMI270_Data_t *out_data) {
+    uint8_t current_read_idx = bmi270_ready_idx;
+    *out_data = bmi270_pingpong_buf[current_read_idx];
+}
 // ================= 4. 校准函数 (阻塞) =================
 /**
  * @brief BMI270 离线校准函数 (完全复刻 BMI088 逻辑)

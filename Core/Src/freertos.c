@@ -185,7 +185,7 @@ void SD_BSP_Direct_Test(void)
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-static TaskHandle_t IMU_Task_Handle;
+TaskHandle_t IMU_Task_Handle;
 static TaskHandle_t Control_Task_Handle;
 static TaskHandle_t Comm_Task_Handle;
 TaskHandle_t SensorHub_Task_Handle;
@@ -202,7 +202,7 @@ const osThreadAttr_t defaultTask_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-static void IMU_Task(void *argument);
+// static void IMU_Task(void *argument);
 static void Control_Task(void *argument);
 static void Comm_Task(void *argument);
 static void Monitor_Task(void *argument);
@@ -247,16 +247,16 @@ void MX_FREERTOS_Init(void) {
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
-  xTaskCreate(IMU_Task,"IMU_Task",1024,NULL,osPriorityHigh1,&IMU_Task_Handle);
+  xTaskCreate(INS_Task,"IMU_Task",4096,NULL,osPriorityHigh2,&IMU_Task_Handle);
   xTaskCreate(Control_Task,"Control_Task",512,NULL,osPriorityHigh,&Control_Task_Handle);
   xTaskCreate(Comm_Task,"Comm_Task",512,NULL,osPriorityNormal,&Comm_Task_Handle);
-  xTaskCreate(SensorHub_Task,"SensorHub_Task",1024,NULL,osPriorityHigh2,&SensorHub_Task_Handle);
+  xTaskCreate(SensorHub_Task,"SensorHub_Task",1024,NULL,osPriorityHigh1,&SensorHub_Task_Handle);
     xTaskCreate(UAV_DataLog_Task,"UAV_DataLog_Task",512,NULL,osPriorityNormal,&UAV_DataLog_Task_Handle);
     xTaskCreate(Monitor_Task,"Monitor_Task",256,NULL,osPriorityLow,&Monitor_Task_Handle);
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
-    SEGGER_SYSVIEW_Conf();  // 配置 SystemView
+    // SEGGER_SYSVIEW_Conf();  // 配置 SystemView
   /* add events, ... */
   /* USER CODE END RTOS_EVENTS */
 
@@ -272,7 +272,18 @@ void MX_FREERTOS_Init(void) {
 void StartDefaultTask(void *argument)
 {
   /* init code for USB_DEVICE */
-    SEGGER_SYSVIEW_Start(); // <<<<< 放在这里！在 RTOS 启动前强制开启记录！
+    // SEGGER_SYSVIEW_Start(); // <<<<< 放在这里！在 RTOS 启动前强制开启记录！
+    // ✅ 在任务中初始化 SystemView
+    // osDelay(5);                    // 可选：等待系统稳定
+    // SEGGER_SYSVIEW_Stop();         // 清除残留状态
+    // SEGGER_SYSVIEW_Conf();         // 配置
+    // SEGGER_SYSVIEW_Start();        // 启动
+    osDelay(100);
+
+    SEGGER_SYSVIEW_Stop();
+    SEGGER_SYSVIEW_Conf();
+    // 连接成功后启动
+    SEGGER_SYSVIEW_Start();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN StartDefaultTask */
   /* Infinite loop */
@@ -285,36 +296,36 @@ void StartDefaultTask(void *argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
-float time_start, time_end;
-float time_blocking, time_dma;
-void IMU_Task(void *argument)
-{
-  /* USER CODE BEGIN IMU_Task */
-  INS_Init();
-  /* 1. �???????�??????? I2C 通信是否正常 (阻塞模式) */
-
-  // �???机静止时，获取起飞地面的基准气压
-  // 使用绝对延时，保证严格的 1kHz
-  TickType_t xLastWakeTime;
-  const TickType_t xFrequency = pdMS_TO_TICKS(1); // 1ms
-  xLastWakeTime = xTaskGetTickCount();
-  /* Infinite loop */
-  for(;;)
-  {
-
-    // 1. 确保任务以准确的 1kHz 周期唤醒
-    vTaskDelayUntil(&xLastWakeTime, xFrequency);
-    // [调试用] 记录�????????????始时�????????????
-    time_start = DWT_GetTimeline_us();
-
-    INS_Task();
-    time_end = DWT_GetTimeline_us();
-    time_dma = time_end - time_start;
-    // vTaskDelay(1);
-    // IMU data acquisition and processing code goes here
-  }
-  /* USER CODE END IMU_Task */
-}
+// float time_start, time_end;
+// float time_blocking, time_dma;
+// void IMU_Task(void *argument)
+// {
+//   /* USER CODE BEGIN IMU_Task */
+//   INS_Init();
+//   /* 1. �???????�??????? I2C 通信是否正常 (阻塞模式) */
+//
+//   // �???机静止时，获取起飞地面的基准气压
+//   // 使用绝对延时，保证严格的 1kHz
+//   TickType_t xLastWakeTime;
+//   const TickType_t xFrequency = pdMS_TO_TICKS(1); // 1ms
+//   xLastWakeTime = xTaskGetTickCount();
+//   /* Infinite loop */
+//   for(;;)
+//   {
+//
+//     // 1. 确保任务以准确的 1kHz 周期唤醒
+//     vTaskDelayUntil(&xLastWakeTime, xFrequency);
+//     // [调试用] 记录�????????????始时�????????????
+//     time_start = DWT_GetTimeline_us();
+//
+//     INS_Task();
+//     time_end = DWT_GetTimeline_us();
+//     time_dma = time_end - time_start;
+//     // vTaskDelay(1);
+//     // IMU data acquisition and processing code goes here
+//   }
+//   /* USER CODE END IMU_Task */
+// }
 
 void Control_Task(void *argument)
 {
