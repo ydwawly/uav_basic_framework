@@ -34,6 +34,7 @@
 #include "ff.h"
 #include "i2c.h"
 #include "ins_task.h"
+#include "mavlink_user.h"
 #include "Monitor.h"
 #include "sdmmc.h"
 #include "SD_Card.h"
@@ -204,7 +205,7 @@ const osThreadAttr_t defaultTask_attributes = {
 /* USER CODE BEGIN FunctionPrototypes */
 // static void IMU_Task(void *argument);
 static void Control_Task(void *argument);
-static void Comm_Task(void *argument);
+// static void Comm_Task(void *argument);
 static void Monitor_Task(void *argument);
 // static void SensorHub_Task(void *argument);
 
@@ -247,7 +248,7 @@ void MX_FREERTOS_Init(void) {
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
-  xTaskCreate(INS_Task,"IMU_Task",4096,NULL,osPriorityHigh2,&IMU_Task_Handle);
+  xTaskCreate(INS_Task,"IMU_Task",1024,NULL,osPriorityHigh2,&IMU_Task_Handle);
   xTaskCreate(Control_Task,"Control_Task",512,NULL,osPriorityHigh,&Control_Task_Handle);
   xTaskCreate(Comm_Task,"Comm_Task",512,NULL,osPriorityNormal,&Comm_Task_Handle);
   xTaskCreate(SensorHub_Task,"SensorHub_Task",1024,NULL,osPriorityHigh1,&SensorHub_Task_Handle);
@@ -340,18 +341,18 @@ void Control_Task(void *argument)
   /* USER CODE END Control_Task */
 }
 
-static void Comm_Task(void *argument)
-{
-  /* USER CODE BEGIN Control_Task */
-  /* Infinite loop */
-  for(;;)
-  {
-    // Control algorithm code goes here
-
-    osDelay(20); // Adjust delay as needed
-  }
-  /* USER CODE END Control_Task */
-}
+// static void Comm_Task(void *argument)
+// {
+//   /* USER CODE BEGIN Control_Task */
+//   /* Infinite loop */
+//   for(;;)
+//   {
+//     // Control algorithm code goes here
+//
+//     osDelay(20); // Adjust delay as needed
+//   }
+//   /* USER CODE END Control_Task */
+// }
 
 
 static void Monitor_Task(void *argument)
