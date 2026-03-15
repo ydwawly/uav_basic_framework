@@ -10,14 +10,12 @@
 #include "message_center.h"
 #include "PT1_Filter.h"
 
-static BMI088_Data_t bmi088_data;
 // 1. 定义两个一模一样的结构体，作为 Ping-Pong 缓冲区
 static BMI088_Data_t bmi088_pingpong_buf[2];
 
 // 2. 定义两个极其关键的游标 (必须加 volatile，防止编译器优化)
 static volatile uint8_t write_idx = 0;  // DMA ISR 当前正在写入的缓冲区 (0或1)
 static volatile uint8_t ready_idx = 0;  // 已经完整写完，可供 Task 读取的缓冲区 (0或1)
-static Publisher_t *bmi088_data_pub;
 SPI_HandleTypeDef *bmi_spi;
 
 // DMA缓冲区
@@ -85,8 +83,20 @@ uint8_t BMI088_Init(SPI_HandleTypeDef *hspi)
 
     // 配置: 带宽 230Hz
     write_reg(BMI088_GYRO_BANDWIDTH, BMI088_GYRO_2000_230_HZ | BMI088_GYRO_BANDWIDTH_MUST_Set, 0);
-    Calibrate_BMI088(&bmi088_data);
+    // ================== ✨ 核心修复：乒乓缓冲区的校准逻辑 ==================
+    // 1. 初始化 Scale 的默认值（防止计算中出现乘 0）
+    bmi088_pingpong_buf[0].AccelScale = 1.0f;
+    bmi088_pingpong_buf[1].AccelScale = 1.0f;
 
+    // 2. 执行离线校准，结果存入 Buffer 0
+    Calibrate_BMI088(&bmi088_pingpong_buf[0]);
+
+    // 3. 强制同步：把 Buffer 0 的校准参数完美克隆给 Buffer 1
+    bmi088_pingpong_buf[1].AccelScale = bmi088_pingpong_buf[0].AccelScale;
+    for(int i = 0; i < 3; i++) {
+        bmi088_pingpong_buf[1].GyroOffset[i] = bmi088_pingpong_buf[0].GyroOffset[i];
+    }
+    // =======================================================================
     // --- 3. 准备 DMA 缓冲区命令 (保持不变) ---
     // Gyro 读命令: 从 0x02 开始读 (MSB=1)
     gyro_tx[0] = BMI088_GYRO_X_L | 0x80;
@@ -112,12 +122,14 @@ uint8_t BMI088_Init(SPI_HandleTypeDef *hspi)
     // 将 DRDY 信号映射到 INT1 引脚
     write_reg(BMI088_INT_MAP_DATA, BMI088_ACC_INT1_DRDY_INTERRUPT, 1);
     // ==========================================================
-
-
     // 重置状态
     bmi088_dma_state = 0;
-    bmi088_data.healthy = 1;
-    bmi088_data_pub = PubRegister("bmi088_data", sizeof(BMI088_Data_t));
+
+    // 4. 两个缓冲区都标记为健康
+    bmi088_pingpong_buf[0].healthy = 1;
+    bmi088_pingpong_buf[1].healthy = 1;
+
+    // 重置状态
 
     LOGINFO("[BMI088] BMI088 Init Success !");
     return BMI088_OK;
@@ -215,12 +227,21 @@ void BMI088_DMA_ISR_Handler(BaseType_t *HigherPriorityTaskWoken)
         }
 
         // 利用等待 DMA 的间隙，立刻将 Gyro 数据解析到当前的 write_idx 缓冲区中
-        raw = (int16_t)((gyro_rx[2] << 8) | gyro_rx[1]);
-        bmi088_pingpong_buf[write_idx].Gyro[IMU_Y] = -(raw * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[IMU_Y]);
-        raw = (int16_t)((gyro_rx[4] << 8) | gyro_rx[3]);
-        bmi088_pingpong_buf[write_idx].Gyro[IMU_X] = -(raw * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[IMU_X]);
-        raw = (int16_t)((gyro_rx[6] << 8) | gyro_rx[5]);
-        bmi088_pingpong_buf[write_idx].Gyro[IMU_Z] = -(raw * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[IMU_Z]);
+        // raw = (int16_t)((gyro_rx[2] << 8) | gyro_rx[1]);
+        // bmi088_pingpong_buf[write_idx].Gyro[IMU_Y] = -(raw * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[IMU_Y]);
+        // raw = (int16_t)((gyro_rx[4] << 8) | gyro_rx[3]);
+        // bmi088_pingpong_buf[write_idx].Gyro[IMU_X] = -(raw * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[IMU_X]);
+        // raw = (int16_t)((gyro_rx[6] << 8) | gyro_rx[5]);
+        // bmi088_pingpong_buf[write_idx].Gyro[IMU_Z] = -(raw * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[IMU_Z]);
+        // 1. 提取原始数据 (此时还是传感器本地坐标系)
+        int16_t raw_x = (int16_t)((gyro_rx[2] << 8) | gyro_rx[1]);
+        int16_t raw_y = (int16_t)((gyro_rx[4] << 8) | gyro_rx[3]);
+        int16_t raw_z = (int16_t)((gyro_rx[6] << 8) | gyro_rx[5]);
+
+        // 2. 在本地坐标系下减去对应的零偏，映射时再赋予正确的正负号和轴向
+        bmi088_pingpong_buf[write_idx].Gyro[IMU_Y] = -(raw_x * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[0]);
+        bmi088_pingpong_buf[write_idx].Gyro[IMU_X] = -(raw_y * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[1]);
+        bmi088_pingpong_buf[write_idx].Gyro[IMU_Z] = -(raw_z * BMI088_GYRO_2000_SEN - bmi088_pingpong_buf[write_idx].GyroOffset[2]);
     }
     else if (bmi088_dma_state == 2) // Accel 完成
     {

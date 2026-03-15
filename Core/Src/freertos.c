@@ -30,6 +30,7 @@
 #include "bsp_dwt.h"
 #include "bsp_log.h"
 #include "bsp_usart.h"
+#include "bsp_usb.h"
 #include "fatfs.h"
 #include "ff.h"
 #include "i2c.h"
@@ -191,6 +192,7 @@ static TaskHandle_t Control_Task_Handle;
 static TaskHandle_t Comm_Task_Handle;
 TaskHandle_t SensorHub_Task_Handle;
 TaskHandle_t UAV_DataLog_Task_Handle;
+TaskHandle_t USB_Tx_Task_Handle; // 新增句柄
 static TaskHandle_t Monitor_Task_Handle;
 /* USER CODE END Variables */
 /* Definitions for defaultTask */
@@ -254,6 +256,7 @@ void MX_FREERTOS_Init(void) {
   xTaskCreate(SensorHub_Task,"SensorHub_Task",1024,NULL,osPriorityHigh1,&SensorHub_Task_Handle);
     xTaskCreate(UAV_DataLog_Task,"UAV_DataLog_Task",512,NULL,osPriorityNormal,&UAV_DataLog_Task_Handle);
     xTaskCreate(Monitor_Task,"Monitor_Task",256,NULL,osPriorityLow,&Monitor_Task_Handle);
+    xTaskCreate(USB_Tx_Task, "USB_Tx_Task", 512, NULL, osPriorityBelowNormal, &USB_Tx_Task_Handle);
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */

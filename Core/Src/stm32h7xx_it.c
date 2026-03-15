@@ -61,7 +61,7 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
-extern PCD_HandleTypeDef hpcd_USB_OTG_HS;
+extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
 extern DMA_HandleTypeDef hdma_i2c2_rx;
 extern DMA_HandleTypeDef hdma_i2c2_tx;
 extern I2C_HandleTypeDef hi2c2;
@@ -495,20 +495,6 @@ void USART6_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles USB On The Go HS global interrupt.
-  */
-void OTG_HS_IRQHandler(void)
-{
-  /* USER CODE BEGIN OTG_HS_IRQn 0 */
-
-  /* USER CODE END OTG_HS_IRQn 0 */
-  HAL_PCD_IRQHandler(&hpcd_USB_OTG_HS);
-  /* USER CODE BEGIN OTG_HS_IRQn 1 */
-
-  /* USER CODE END OTG_HS_IRQn 1 */
-}
-
-/**
   * @brief This function handles UART8 global interrupt.
   */
 void UART8_IRQHandler(void)
@@ -519,6 +505,20 @@ void UART8_IRQHandler(void)
   HAL_UART_IRQHandler(&huart8);
   /* USER CODE BEGIN UART8_IRQn 1 */
   /* USER CODE END UART8_IRQn 1 */
+}
+
+/**
+  * @brief This function handles USB On The Go FS global interrupt.
+  */
+void OTG_FS_IRQHandler(void)
+{
+  /* USER CODE BEGIN OTG_FS_IRQn 0 */
+
+  /* USER CODE END OTG_FS_IRQn 0 */
+  HAL_PCD_IRQHandler(&hpcd_USB_OTG_FS);
+  /* USER CODE BEGIN OTG_FS_IRQn 1 */
+
+  /* USER CODE END OTG_FS_IRQn 1 */
 }
 
 /**
@@ -594,11 +594,11 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
   }
   portYIELD_FROM_ISR(xWoken);
 }
-// �?? BMI270driver.c 或其他地方添加这个函数打个断�??
+// �??? BMI270driver.c 或其他地方添加这个函数打个断�???
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
   if(hspi->Instance == SPI3) {
-    // 如果进到这里了，说明是内存地�??问题(DTCM)或�?�线错误
+    // 如果进到这里了，说明是内存地�???问题(DTCM)或�?�线错误
     __NOP();
   }
 }

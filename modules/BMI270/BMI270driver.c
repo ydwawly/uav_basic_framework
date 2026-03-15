@@ -22,11 +22,9 @@
 #define BMI270_GYRO_SEN_DEG  (2000.0f / 32768.0f)
 #define DEG_TO_RAD           0.01745329252f
 
-static BMI270_Data_t bmi270_data;
 static BMI270_Data_t bmi270_pingpong_buf[2];
 static volatile uint8_t bmi270_write_idx = 0;
 static volatile uint8_t bmi270_ready_idx = 0;
-static Publisher_t *bmi270_data_pub;
 SPI_HandleTypeDef *bmi270_spi;
 
 // DMA 缓冲区
@@ -54,20 +52,28 @@ uint8_t BMI270_Driver_Init(SPI_HandleTypeDef *hspi)
     // 注意：BMI270_Init_Process 里应该包含 bmi270_init() 和 sensor_enable()
     // 务必确保你的 BMI270_Init_Process 里的 hspi 指针和这里的 hspi 一致
     BMI270_Init_Process();
-    bmi270_data.AccelScale = 1.0f;
+    // ================== ✨ 核心修复：乒乓缓冲区的校准逻辑 ==================
+    // 初始化两个缓冲区的 Scale 默认值
+    bmi270_pingpong_buf[0].AccelScale = 1.0f;
+    bmi270_pingpong_buf[1].AccelScale = 1.0f;
 
-    // 2. 执行离线校准 (阻塞式，耗时约几秒)
-    Calibrate_BMI270(&bmi270_data);
+    // 2. 执行离线校准，结果存入 Buffer 0
+    Calibrate_BMI270(&bmi270_pingpong_buf[0]);
+
+    // 3. 强制同步：把 Buffer 0 的校准参数完美克隆给 Buffer 1
+    bmi270_pingpong_buf[1].AccelScale = bmi270_pingpong_buf[0].AccelScale;
+    for(int i = 0; i < 3; i++) {
+        bmi270_pingpong_buf[1].GyroOffset[i] = bmi270_pingpong_buf[0].GyroOffset[i];
+    }
+    // =======================================================================
 
     // 3. 准备 DMA 发送缓冲区
     // 读命令: 0x0C | 0x80 (地址0x0C, 读位置1)
     bmi270_tx[0] = BMI270_ACC_X_LSB_REG | 0x80;
     memset(&bmi270_tx[1], 0xFF, BMI270_DMA_LEN - 1);
 
-    // 4. 注册发布者
-    bmi270_data.healthy = 1;
-    bmi270_data_pub = PubRegister("bmi270_data", sizeof(BMI270_Data_t));
-
+    bmi270_pingpong_buf[0].healthy = 1;
+    bmi270_pingpong_buf[1].healthy = 1;
     bmi270_init_done = 1; // ✨ 新增：校准全弄完了，才允许处理中断！
 
     LOGINFO("[BMI270] BMI270 Init Success ！");
@@ -190,11 +196,14 @@ void BMI270_DMA_ISR_Handler(BaseType_t *HigherPriorityTaskWoken)
 
         // 获取当前正在写入的缓冲区指针（用指针让代码更干净）
         BMI270_Data_t *curr_buf = &bmi270_pingpong_buf[bmi270_write_idx];
+        float clean_acc_x = raw_acc_x * BMI270_ACC_SEN * curr_buf->AccelScale;
+        float clean_acc_y = raw_acc_y * BMI270_ACC_SEN * curr_buf->AccelScale;
+        float clean_acc_z = raw_acc_z * BMI270_ACC_SEN * curr_buf->AccelScale;
 
-        // --- 2. 物理量转换与坐标系对齐 ---
-        curr_buf->Accel[IMU_Y] = raw_acc_x * BMI270_ACC_SEN * curr_buf->AccelScale;
-        curr_buf->Accel[IMU_X] = raw_acc_y * BMI270_ACC_SEN * curr_buf->AccelScale;
-        curr_buf->Accel[IMU_Z] = raw_acc_z * BMI270_ACC_SEN * curr_buf->AccelScale;
+        // // --- 2. 物理量转换与坐标系对齐 ---
+        // curr_buf->Accel[IMU_Y] = raw_acc_x * BMI270_ACC_SEN * curr_buf->AccelScale;
+        // curr_buf->Accel[IMU_X] = raw_acc_y * BMI270_ACC_SEN * curr_buf->AccelScale;
+        // curr_buf->Accel[IMU_Z] = raw_acc_z * BMI270_ACC_SEN * curr_buf->AccelScale;
 
         float gyr_deg_x = raw_gyr_x * BMI270_GYRO_SEN_DEG;
         float gyr_deg_y = raw_gyr_y * BMI270_GYRO_SEN_DEG;
@@ -208,11 +217,27 @@ void BMI270_DMA_ISR_Handler(BaseType_t *HigherPriorityTaskWoken)
         curr_buf->Gyro[IMU_X] =  -clean_gyr_y * DEG_TO_RAD;
         curr_buf->Gyro[IMU_Z] =  -clean_gyr_z * DEG_TO_RAD;
 
+        // ================= ✨ 核心修复：根据实测映射坐标系 =================
+        // 实测结论: BMI088_X(机体X) = -BMI270_Y,  BMI088_Y(机体Y) = BMI270_X
+
+        // Accel 映射 (加速度计和陀螺仪同处一个芯片，必须遵循相同的几何旋转)
+        curr_buf->Accel[IMU_X] = -clean_acc_x;
+        curr_buf->Accel[IMU_Y] = clean_acc_y;
+        curr_buf->Accel[IMU_Z] = clean_acc_z;  // 假设Z轴同向
+
+        // Gyro 映射 (转为 rad/s)
+        curr_buf->Gyro[IMU_X] =  -(-clean_gyr_x) * DEG_TO_RAD; // 等价于 clean_gyr_y * DEG_TO_RAD
+        curr_buf->Gyro[IMU_Y] =  -(clean_gyr_y) * DEG_TO_RAD;
+        curr_buf->Gyro[IMU_Z] =  -(clean_gyr_z) * DEG_TO_RAD;  // 取负是因为你原始代码里写了负，如果 Z 轴反了，把这个负号去掉即可
+
+        // 调试用的 deg/s 数据 (保持本地坐标系，方便看原始波形)
         curr_buf->GyroDeg[0] = clean_gyr_x;
         curr_buf->GyroDeg[1] = clean_gyr_y;
         curr_buf->GyroDeg[2] = clean_gyr_z;
+        // ====================================================================
 
         // --- 3. 健康检测 ---
+        // 注意：这里由于坐标系换了，最好用映射后的机体 X 轴来判断
         if (fabsf(curr_buf->Gyro[IMU_X] - last_gyro_x) < 0.000001f) stuck_count++;
         else stuck_count = 0;
 
@@ -221,17 +246,18 @@ void BMI270_DMA_ISR_Handler(BaseType_t *HigherPriorityTaskWoken)
         if (stuck_count > 100) curr_buf->healthy = 0;
         else curr_buf->healthy = 1;
 
-        // ==========================================
-        // 4. 无锁并发魔法时刻 (Ping-Pong Switch)
-        // ==========================================
-        bmi270_ready_idx = bmi270_write_idx;       // 标记当前这桌数据做好了
-        bmi270_write_idx = 1 - bmi270_write_idx;   // 去另一桌准备接客
+        // --- 4. 无锁并发魔法时刻 ---
+        bmi270_ready_idx = bmi270_write_idx;
+        bmi270_write_idx = 1 - bmi270_write_idx;
+
 
         // 5. 唤醒 INS_Task
-        // 确保 INS_TaskHandle 不是 NULL (任务已创建)
         if (IMU_Task_Handle != NULL) {
             xTaskNotifyFromISR(IMU_Task_Handle, NOTIFY_BIT_BMI270_READY, eSetBits, HigherPriorityTaskWoken);
         }
+
+
+
     }
 }
 

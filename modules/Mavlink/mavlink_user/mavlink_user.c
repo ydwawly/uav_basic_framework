@@ -12,6 +12,7 @@
 #include "BMI088driver.h"
 // FreeRTOS 组件
 #include "queue.h"
+#include "bsp_usb.h"
 #include "mavlink_user.h"
 
 
@@ -64,7 +65,7 @@ void Mavlink_Init(void)
 }
 
 // ==========================================
-// 3. 发送辅助函数
+// 3. 发送辅助函数 (改造为纯异步投递)
 // ==========================================
 static void mavlink_send_usb(mavlink_message_t *msg)
 {
@@ -73,11 +74,9 @@ static void mavlink_send_usb(mavlink_message_t *msg)
     // 将结构体序列化为最终的字节流
     uint16_t len = mavlink_msg_to_send_buffer(tx_buf, msg);
 
-    // 调用 BSP 层发送
-    if (mavlink_usb_instance != NULL)
-    {
-        USBSend(mavlink_usb_instance, tx_buf, len);
-    }
+    // 【核心改造】：不再调用阻塞的 USBSend，而是调用异步的 USBSend_Async
+    // 直接把打包好的字节流扔进 StreamBuffer (出餐台)，瞬间返回！
+    USBSend_Async(tx_buf, len);
 }
 
 // ==========================================
@@ -158,7 +157,7 @@ void Comm_Task(void *pvParameters)
         mavlink_msg_attitude_pack(
             MAVLINK_SYSTEM_ID, MAVLINK_COMPONENT_ID, &tx_msg,
             xTaskGetTickCount() * portTICK_PERIOD_MS, // 时间戳(ms)
-            current_imu.Roll, current_imu.Pitch, current_imu.Yaw, // 必须是弧度 rad
+            current_imu.Roll * DEG_TO_RAD, current_imu.Pitch * DEG_TO_RAD, current_imu.Yaw * DEG_TO_RAD, // 必须是弧度 rad
             current_imu.Gyro[IMU_X], current_imu.Gyro[IMU_Y], current_imu.Gyro[IMU_Z] // 必须是弧度每秒 rad/s
         );
         mavlink_send_usb(&tx_msg);

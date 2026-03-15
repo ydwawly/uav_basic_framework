@@ -135,7 +135,7 @@ static void InitQuaternion(float *init_q4)
     init_q4[2] = cr * sp * cy + sr * cp * sy;
     init_q4[3] = cr * cp * sy - sr * sp * cy;
 
-    LOGINFO("[INS] Init Quaternion: w=%.2f x=%.2f y=%.2f z=%.2f", init_q4[0], init_q4[1], init_q4[2], init_q4[3]);
+    // LOGINFO("[INS] Init Quaternion: w=%.2f x=%.2f y=%.2f z=%.2f", init_q4[0], init_q4[1], init_q4[2], init_q4[3]);
 }
 
 // ======================================================================
@@ -184,11 +184,12 @@ void INS_Init(void)
 void INS_Task(void *argument)
 {
     uint32_t notifyBits;
-    BMI088_Data_t raw_bmi088;
-    BMI270_Data_t raw_bmi270;
+    static BMI088_Data_t raw_bmi088;
+    static BMI270_Data_t raw_bmi270;
 
-    float fused_gyro[3];
-    float fused_accel[3];
+    static float fused_gyro[3];
+    static float fused_accel[3];
+
     static float ins_dt;
     static float ins_start;
     // 错误记录，防止日志刷屏

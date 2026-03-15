@@ -51,7 +51,7 @@ static void Process_Raw_Data(void) {
 // 核心：基于真实温度补偿的高精度高度解算
 static void Update_Altitude(void) {
     // 绝对高度 (使用标准海平面气压公式，发给地面站看就行)
-    alt_data.absolute_alt = 44330.0f * (1.0f - powf((alt_data.pressure / STANDARD_SEA_LEVEL_PRESSURE), 0.190295f));
+    // alt_data.absolute_alt = 44330.0f * (1.0f - powf((alt_data.pressure / STANDARD_SEA_LEVEL_PRESSURE), 0.190295f));
 
     if (alt_data.is_calibrated) {
         // 相对高度 (利用物理测高公式 Hypsometric Equation 引入真实的开尔文温度补偿)

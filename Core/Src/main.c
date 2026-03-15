@@ -32,6 +32,7 @@
 /* USER CODE BEGIN Includes */
 #include "bsp_init.h"
 #include "bsp_usart.h"
+#include "bsp_usb.h"
 #include "SensorHub.h"
 #include "usart_test.h"
 #include "fatfs.h"
@@ -106,7 +107,7 @@ void MPU_Config_DMA_Memory(void)
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+  MPU_Config_DMA_Memory();
   /* USER CODE END 1 */
 /* Enable the CPU Cache */
 
@@ -121,7 +122,6 @@ int main(void)
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
 
   /* USER CODE BEGIN Init */
-  MPU_Config_DMA_Memory();
   uint32_t rtt_len = (uint32_t)&_ertt - (uint32_t)&_srtt;
   if (rtt_len > 0) {
     memset(&_srtt, 0, rtt_len);
@@ -161,6 +161,7 @@ int main(void)
 
   BSPInit();
   SensorHub_Init();
+  USB_Bsp_Init();
   // AppPcTest_Init();
   /* USER CODE END 2 */
 

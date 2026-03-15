@@ -28,5 +28,15 @@ uint8_t USBSend(USBInstance *_instance, uint8_t *send_buf, uint16_t send_size);
 
 /* 供usbd_cdc_if.c调用的底层接口 */
 void USB_ReceiveHandler(uint8_t *Buf, uint32_t *Len);
+void USB_Bsp_Init(void);
+
+uint8_t USBSend_Async(uint8_t *send_buf, uint16_t send_size);
+
+/**
+ * @brief 改造后的异步 usb_printf
+ */
+void usb_printf(const char *format, ...);
+
+void USB_Tx_Task(void *pvParameters);
 
 #endif //UAV_BAICE_FRAMEWORK_V1_0_BSP_USB_H
