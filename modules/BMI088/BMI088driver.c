@@ -82,7 +82,7 @@ uint8_t BMI088_Init(SPI_HandleTypeDef *hspi)
     write_reg(BMI088_GYRO_RANGE, BMI088_GYRO_2000, 0);
 
     // 配置: 带宽 230Hz
-    write_reg(BMI088_GYRO_BANDWIDTH, BMI088_GYRO_2000_230_HZ | BMI088_GYRO_BANDWIDTH_MUST_Set, 0);
+    write_reg(BMI088_GYRO_BANDWIDTH, BMI088_GYRO_1000_116_HZ | BMI088_GYRO_BANDWIDTH_MUST_Set, 0);
     // ================== ✨ 核心修复：乒乓缓冲区的校准逻辑 ==================
     // 1. 初始化 Scale 的默认值（防止计算中出现乘 0）
     bmi088_pingpong_buf[0].AccelScale = 1.0f;

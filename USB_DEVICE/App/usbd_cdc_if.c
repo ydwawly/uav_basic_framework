@@ -270,6 +270,7 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 
   // 1. 先把接收到的数据处理完 (或者拷贝到你自己的 FIFO 环形缓冲区里)
   // 注意：如果你的 USB_ReceiveHandler 接收的是具体长度数值，这里要写 *Len
+  // 🔧 关键改动：调用 BSP 层的接收处理函数
   USB_ReceiveHandler(Buf, Len);
 
   // 2. 数据处理安全落地后，再重新武装端点，让硬件接收下一包
@@ -324,12 +325,8 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   UNUSED(Buf);
   UNUSED(Len);
   UNUSED(epnum);
-  // 【核心修复】：外卖真的一滴不剩地送到了，给传菜员亮绿灯，拿下一包！
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  if (usb_tx_cplt_sem != NULL) {
-    xSemaphoreGiveFromISR(usb_tx_cplt_sem, &xHigherPriorityTaskWoken);
-  }
-  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+  USB_TxCplt_Callback();
+
   /* USER CODE END 13 */
   return result;
 }

@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "BMI088driver.h"
 #include "BMI270driver.h"
+#include "bsp_dwt.h"
 #include "SEGGER_SYSVIEW.h"
 #include "SensorHub.h"
 #include "SPL06.h"
@@ -47,7 +48,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-
+volatile uint32_t imu_drdy_timestamp = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -545,7 +546,7 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
     BMI088_DMA_ISR_Handler(&HigherPriorityTaskWoken);
     // BMI088_DMA_Callback();
   }
-  if (hspi->Instance == SPI3)
+  else if (hspi->Instance == SPI3)
   {
     BMI270_DMA_ISR_Handler(&HigherPriorityTaskWoken);
     // BMI270_DMA_Callback();
@@ -566,6 +567,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     }
       break;
     case GYRO_INT_Pin:
+      imu_drdy_timestamp = DWT->CYCCNT;
       BMI088_Read_DMA_Start();
       break;
     case BMI270_INT_Pin:
@@ -594,11 +596,11 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
   }
   portYIELD_FROM_ISR(xWoken);
 }
-// �??? BMI270driver.c 或其他地方添加这个函数打个断�???
+// �??? BMI270driver.c 或其他地方添加这个函数打个断�???
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
   if(hspi->Instance == SPI3) {
-    // 如果进到这里了，说明是内存地�???问题(DTCM)或�?�线错误
+    // 如果进到这里了，说明是内存地�???问题(DTCM)或�?�线错误
     __NOP();
   }
 }

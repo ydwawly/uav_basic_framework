@@ -1,180 +1,276 @@
 //
 // Created by Administrator on 2026/1/10.
 //
-#include "bsp_usb.h"
-
-
-/**
- * @file bsp_usb.c
- * @author YourName
- * @brief USB虚拟串口BSP层实现
- */
 
 #include "bsp_usb.h"
-#include "stdlib.h"
-#include "memory.h"
-#include "FreeRTOS.h"
-#include "bsp_log.h" // 如果有日志库请开启
-#include "semphr.h"
-#include "stream_buffer.h"
-
-static uint8_t idx = 0;
-static USBInstance *usb_instance[DEVICE_USB_CNT] = {NULL};
-// 定义全避变量
-StreamBufferHandle_t mavlink_tx_stream = NULL;
-SemaphoreHandle_t usb_tx_cplt_sem = NULL;
+#include "bsp_ringbuffer.h"
+#include "bsp_log.h"
 #include "usbd_cdc_if.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include <stdlib.h>
+#include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
-/**
- * @brief 注册USB实例
- *
- * @param init_config 初始配置
- * @return USBInstance* 实例指针
- */
-USBInstance *USBRegister(USB_Init_Config_s *init_config)
-{
-    if (idx >= DEVICE_USB_CNT)
-        while (1); // Exceed max count
 
+/* ========================================================== */
+/*                    私有变量                                */
+/* ========================================================== */
+
+// USB 实例管理
+static uint8_t usb_instance_count = 0;
+static USBInstance *usb_instance[DEVICE_USB_CNT] = {NULL};
+
+// 发送 RingBuffer（必须放在 DMA 安全区）
+__attribute__((section(".dma_buffer")))
+static uint8_t usb_tx_pool[USB_TX_RINGBUF_SIZE];
+
+static LockFreeRingBuffer_t usb_tx_rb;
+
+// 硬件状态标志（volatile，防止编译器优化）
+static volatile bool usb_tx_busy = false;
+
+// 统计信息
+static uint32_t total_tx_bytes = 0;
+static uint32_t dropped_tx_bytes = 0;
+
+/* ========================================================== */
+/*                    初始化函数                              */
+/* ========================================================== */
+
+/**
+ * @brief  底层初始化（必须在 RTOS 启动前调用）
+ */
+void USB_Bsp_Init(void)
+{
+    // 初始化发送 RingBuffer
+    if (!RingBuffer_Init(&usb_tx_rb, usb_tx_pool, USB_TX_RINGBUF_SIZE)) {
+        LOGERROR("[USB] RingBuffer init failed!");
+        while(1);  // 致命错误，必须停机
+    }
+
+    // 初始化硬件状态标志
+    usb_tx_busy = false;
+
+    LOGINFO("[USB] BSP Init OK. TX Buffer: %dKB", USB_TX_RINGBUF_SIZE / 1024);
+}
+
+/* ========================================================== */
+/*                    注册函数                                */
+/* ========================================================== */
+
+USBInstance* USBRegister(USB_Init_Config_s *init_config)
+{
+    if (usb_instance_count >= DEVICE_USB_CNT) {
+        LOGERROR("[USB] Exceed max instance count!");
+        while(1);
+    }
+
+    // 动态分配实例（也可以用静态数组）
     USBInstance *instance = (USBInstance *)pvPortMalloc(sizeof(USBInstance));
-    if (instance == NULL)
-    {
-        LOGERROR("[bsp_usb] Malloc failed!");
-        while(1); // 或者做其他错误处理
+    if (instance == NULL) {
+        LOGERROR("[USB] Malloc failed!");
+        while(1);
     }
     memset(instance, 0, sizeof(USBInstance));
 
+    // 保存配置
     instance->recv_buff = init_config->recv_buff;
     instance->recv_buff_size = init_config->recv_buff_size;
     instance->module_callback = init_config->module_callback;
 
-    usb_instance[idx++] = instance;
+    usb_instance[usb_instance_count++] = instance;
+
     return instance;
 }
 
-/**
- * @brief 发送数据 (包装CDC_Transmit_FS)
- *
- * @param _instance 实例指针
- * @param send_buf 发送缓冲区
- * @param send_size 发送长度
- * @return uint8_t USBD_OK if success
- */
-uint8_t USBSend(USBInstance *_instance, uint8_t *send_buf, uint16_t send_size)
-{
-    // USB发送不需要像USART那样区分IT/DMA/BLOCKING
-    // USB底层驱动会自动处理异步传输
-    uint8_t status = CDC_Transmit_FS(send_buf, send_size);
-    return status;
-}
-/**
- * @brief USB 通信底层内核对象初始化
- * @note  必须在 osKernelStart() 之前调用！
- */
-void USB_Bsp_Init(void)
-{
-    // 1. 创建流缓冲区 (出餐台)
-    if (mavlink_tx_stream == NULL) {
-        mavlink_tx_stream = xStreamBufferCreate(2048, 1);
-    }
-
-    // 2. 创建二值信号量 (绿灯)
-    if (usb_tx_cplt_sem == NULL) {
-        usb_tx_cplt_sem = xSemaphoreCreateBinary();
-
-        // 🚨 极其重要：信号量创建后默认是“红灯”
-        // 必须手动 Give 一次，让第一包数据能发出去
-        xSemaphoreGive(usb_tx_cplt_sem);
-    }
-
-    if (mavlink_tx_stream == NULL || usb_tx_cplt_sem == NULL) {
-        LOGERROR("[USB] OS Object Create Failed!");
-        while(1); // 这种底层错误必须原地卡死，不能带病起飞
-    }
-}
+/* ========================================================== */
+/*                    发送接口                                */
+/* ========================================================== */
 
 /**
- * @brief 异步发送 API (所有任务通用的安全入口)
+ * @brief  异步发送（推荐接口）
  */
-/* bsp_usb.c */
-
 uint8_t USBSend_Async(uint8_t *send_buf, uint16_t send_size)
 {
-    // 防呆：如果缓冲区还没建好，直接退回，不准踩踏内存
-    if (mavlink_tx_stream == NULL) {
+    // 防呆检查
+    if (send_buf == NULL || send_size == 0) {
         return 1;
     }
 
-    // 尝试往流缓冲区塞数据
-    // 这里的 0 代表：如果万一缓冲区满了（比如 USB 没插），
-    // 逻辑是“宁可丢包，也绝不卡死控制任务”
-    size_t xBytesSent = xStreamBufferSend(mavlink_tx_stream, send_buf, send_size, 0);
+    // 尝试推入 RingBuffer
+    if (RingBuffer_Push(&usb_tx_rb, send_buf, send_size)) {
+        total_tx_bytes += send_size;
+        return 0;  // 成功
+    } else {
+        // 缓冲区满，丢弃数据
+        dropped_tx_bytes += send_size;
 
-    return (xBytesSent == send_size) ? 0 : 1;
+        // 节流日志：每丢失 1KB 打印一次
+        static uint32_t last_drop_log = 0;
+        if (dropped_tx_bytes - last_drop_log >= 1024) {
+            LOGWARNING("[USB] TX Buffer full! Dropped %lu bytes total", dropped_tx_bytes);
+            last_drop_log = dropped_tx_bytes;
+        }
+
+        return 1;  // 失败
+    }
 }
 
 /**
- * @brief 改造后的异步 usb_printf
+ * @brief  同步发送（不推荐，仅调试用）
+ */
+uint8_t USBSend(USBInstance *_instance, uint8_t *send_buf, uint16_t send_size)
+{
+    // 等待硬件空闲（死等，危险！）
+    uint32_t timeout = 10000;
+    while (usb_tx_busy && timeout--) {
+        // 空转等待
+    }
+
+    if (timeout == 0) {
+        LOGERROR("[USB] Sync send timeout!");
+        return 1;
+    }
+
+    // 直接调用底层发送
+    usb_tx_busy = true;
+    uint8_t result = CDC_Transmit_FS(send_buf, send_size);
+
+    if (result != USBD_OK) {
+        usb_tx_busy = false;  // 发送失败，清除忙标志
+    }
+
+    return result;
+}
+
+/**
+ * @brief  格式化打印
  */
 void usb_printf(const char *format, ...)
 {
-    static uint8_t usb_tx_buf[128]; // 减小一点，省栈空间
+    static uint8_t usb_tx_buf[256];
     va_list args;
-    uint16_t len;
+    int len;
 
     va_start(args, format);
     len = vsnprintf((char *)usb_tx_buf, sizeof(usb_tx_buf), format, args);
     va_end(args);
 
-    // 发送给异步队列，而不是直接操作硬件
-    USBSend_Async(usb_tx_buf, len);
+    if (len > 0) {
+        USBSend_Async(usb_tx_buf, (uint16_t)len);
+    }
 }
+
+/* ========================================================== */
+/*                    接收处理                                */
+/* ========================================================== */
+
 /**
- * @brief 处理USB接收中断的回调函数
- * @note 此函数在 usbd_cdc_if.c 中的 CDC_Receive_FS 中被调用
+ * @brief  USB 接收中断处理（由 usbd_cdc_if.c 调用）
  */
 void USB_ReceiveHandler(uint8_t *Buf, uint32_t *Len)
 {
-    for (uint8_t i = 0; i < idx; ++i)
+    // 分发给所有注册的实例
+    for (uint8_t i = 0; i < usb_instance_count; i++)
     {
-        // 由于USB通常只有一个接口，这里直接分发给注册过的模块
         if (usb_instance[i] != NULL && usb_instance[i]->module_callback != NULL)
         {
-            // 如果用户提供了接收缓存，可以在这里进行拷贝，或者直接在回调中处理Buf
             usb_instance[i]->last_recv_len = (uint16_t)(*Len);
             usb_instance[i]->module_callback(Buf, (uint16_t)(*Len));
         }
     }
 }
 
+/* ========================================================== */
+/*                    发送完成中断                             */
+/* ========================================================== */
+
+/**
+ * @brief  USB 发送完成中断回调（由 usbd_cdc_if.c 调用）
+ */
+void USB_TxCplt_Callback(void)
+{
+    // 清除忙标志，允许下一次发送
+    usb_tx_busy = false;
+}
+
+/* ========================================================== */
+/*                    发送任务                                */
+/* ========================================================== */
+
+/**
+ * @brief  USB 发送任务（从 RingBuffer 取数据并发送）
+ */
 void USB_Tx_Task(void *pvParameters)
 {
-    // 初始化已经在外面做过了
-    uint8_t tx_buf[256];
-    size_t bytes_to_send;
+    uint8_t tx_buf[256];  // 临时发送缓冲区
+    uint32_t bytes_to_send;
+    uint32_t idle_count = 0;
+
+    // 等待 USB 枚举完成
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    LOGINFO("[USB] Tx Task started.");
 
     for (;;)
     {
-        // 1. 等水吃
-        bytes_to_send = xStreamBufferReceive(mavlink_tx_stream, tx_buf, sizeof(tx_buf), portMAX_DELAY);
+        // ========== ① 从 RingBuffer 取数据 ==========
+        bytes_to_send = RingBuffer_Pop(&usb_tx_rb, tx_buf, sizeof(tx_buf));
 
         if (bytes_to_send > 0)
         {
-            // 2. 拿绿灯 (等待硬件空闲)
-            if (xSemaphoreTake(usb_tx_cplt_sem, portMAX_DELAY) == pdTRUE)
-            {
-                // 3. 这里的数据在 RAM_D2 (MPU保护)，直接发
-                uint8_t res = CDC_Transmit_FS(tx_buf, bytes_to_send);
+            // ========== ② 等待硬件空闲 ==========
+            uint32_t timeout = 1000;  // 最大等待时间（循环次数）
+            while (usb_tx_busy && timeout--) {
+                vTaskDelay(pdMS_TO_TICKS(1));  // 每 1ms 检查一次
+            }
 
-                if (res != USBD_OK) {
-                    // 万一底层报错（比如掉线），要把灯还回去，否则任务永远死锁
-                    xSemaphoreGive(usb_tx_cplt_sem);
-                    vTaskDelay(pdMS_TO_TICKS(1));
-                }
+            if (timeout == 0) {
+                LOGERROR("[USB] Hardware stuck! Resetting busy flag.");
+                usb_tx_busy = false;  // 强制复位（可能是硬件异常）
+            }
+
+            // ========== ③ 启动发送 ==========
+            usb_tx_busy = true;
+            uint8_t result = CDC_Transmit_FS(tx_buf, bytes_to_send);
+
+            if (result != USBD_OK) {
+                // 发送失败（可能 USB 未连接）
+                usb_tx_busy = false;
+                vTaskDelay(pdMS_TO_TICKS(10));  // 延迟后重试
+            }
+
+            idle_count = 0;  // 重置空闲计数
+        }
+        else
+        {
+            // ========== ④ 没有数据，休眠让出 CPU ==========
+            idle_count++;
+
+            if (idle_count < 10) {
+                vTaskDelay(pdMS_TO_TICKS(1));   // 短期空闲，快速轮询
+            } else {
+                vTaskDelay(pdMS_TO_TICKS(10));  // 长期空闲，降低轮询频率
             }
         }
     }
 }
 
-// 接收部分建议保持现在的逻辑，但提醒 Mavlink 回调内部要快！
+/* ========================================================== */
+/*                    统计接口                                */
+/* ========================================================== */
+
+void USB_GetTxStats(uint32_t *total_bytes, uint32_t *dropped_bytes, float *buffer_usage)
+{
+    if (total_bytes) {
+        *total_bytes = total_tx_bytes;
+    }
+    if (dropped_bytes) {
+        *dropped_bytes = dropped_tx_bytes;
+    }
+    if (buffer_usage) {
+        uint32_t used = RingBuffer_GetUsed(&usb_tx_rb);
+        *buffer_usage = (float)used / USB_TX_RINGBUF_SIZE;
+    }
+}

@@ -37,6 +37,7 @@
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
+extern volatile uint32_t imu_drdy_timestamp;
 
 /* USER CODE END EC */
 

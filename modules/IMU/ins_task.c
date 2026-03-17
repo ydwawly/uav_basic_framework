@@ -15,7 +15,9 @@
 #include "user_math.h"
 #include "height_kf.h"
 #include "bsp_log.h"
+#include "SD_Card.h"
 #include "SPL06.h"
+#include "stm32h7xx_it.h"
 #include "TFmini_Plus.h"
 
 static Publisher_t *imu_data_pub;
@@ -177,7 +179,6 @@ void INS_Init(void)
 
     DWT_GetDeltaT(&INS_DWT_Count); // 清零积分时间
 }
-
 // ======================================================================
 // 核心解算任务 (运行频率: 取决于 BMI088 中断频率，通常为 1000Hz)
 // ======================================================================
@@ -190,21 +191,31 @@ void INS_Task(void *argument)
     static float fused_gyro[3];
     static float fused_accel[3];
 
-    static float ins_dt;
-    static float ins_start;
+    // ✅ 改用 CYCCNT 直接测量
+    uint32_t ins_start_cyc;
+    float ins_dt_us;
     // 错误记录，防止日志刷屏
     static uint8_t bmi270_fail_logged = 0;
+
+    BlackboxData_t log_packet;
+
+    // 降采样控制（可选，用于自适应）
+    static uint8_t log_downsample_div = 1;
+    static uint8_t log_downsample_cnt = 0;
+
+    uint32_t cpu_freq_us = DWT_GetCPUFreq_us();
+
     INS_Init();
     while (1)
     {
         // 1. 深度挂起任务，等待主 IMU (BMI088) 的中断触发
-        BaseType_t res = xTaskNotifyWait(0x00, 0xFFFFFFFF, &notifyBits, pdMS_TO_TICKS(5));
+        BaseType_t res = xTaskNotifyWait(0x00, NOTIFY_BIT_IMU_READY, &notifyBits, pdMS_TO_TICKS(5));
 
         if (res == pdTRUE)
         {
             if (notifyBits & NOTIFY_BIT_IMU_READY)
             {
-                ins_start = DWT_GetTimeline_ms();
+                ins_start_cyc = DWT->CYCCNT;
 
                 // 2. 瞬间拉取双份原始数据
                 BMI088_Get_RawData(&raw_bmi088);
@@ -346,30 +357,69 @@ void INS_Task(void *argument)
                 // 4. 将最终最纯净、最精准的姿态和高度发送给 Control_Task
                 PubPushFromPool(imu_data_pub, &INS_data);
 
-                ins_dt = DWT_GetTimeline_ms() - ins_start;
-                if (ins_dt > 0.5f) {  // 500μs（严重超时，可能影响控制）
-                    LOGERROR("[INS] SEVERE overrun! dt=%.3fms", ins_dt);
+                // ✅ 任务计时结束：精确到纳秒级
+                uint32_t elapsed_cycles = DWT->CYCCNT - ins_start_cyc;
+                ins_dt_us = (float)elapsed_cycles / (float)cpu_freq_us;
+
+                // 超时检测（单位改为 μs，更直观）
+                if (ins_dt_us > 500.0f) {
+                    LOGERROR("[INS] SEVERE overrun! dt=%.1fus", ins_dt_us);
                 }
-                else if (ins_dt > 0.2f)
+                else if (ins_dt_us > 200.0f) {
+                    LOGWARNING("[INS] Task overrun! dt=%.1fus", ins_dt_us);
+                }
+
+                // 统计最大耗时
+                static float max_ins_dt_us = 0;
+                if (ins_dt_us > max_ins_dt_us) {
+                    max_ins_dt_us = ins_dt_us;
+                }
+
+                // 全链路延迟（从中断触发到数据就绪）
+                uint32_t total_latency_cyc = DWT->CYCCNT - imu_drdy_timestamp;
+                float total_latency_us = (float)total_latency_cyc / (float)cpu_freq_us;
+
+                static float max_latency_us = 0;
+                if (total_latency_us > max_latency_us) {
+                    max_latency_us = total_latency_us;
+                }
+
+                // ═══════════ 日志降采样（用 if 包裹） ═══════════
+                log_downsample_cnt++;
+                if (log_downsample_cnt >= log_downsample_div)
                 {
-                    // 200μs（警告，接近极限）
-                    LOGWARNING("[INS] Task overrun! dt=%.3fms", ins_dt);
-                }
-                // 可选：统计最大耗时
-                static float max_ins_dt = 0;
-                if (ins_dt > max_ins_dt) {
-                    max_ins_dt = ins_dt;
-                }
+                    log_downsample_cnt = 0;
 
-            }
-            else if (notifyBits & NOTIFY_BIT_BMI270_READY)
-            {
+                    log_packet.timestamp_us = DWT_GetTimeline_us();
+                    memcpy(&log_packet.roll, &INS_data.Roll, 9 * sizeof(float));
+                    log_packet.height     = height_kf_handle.height;
+                    log_packet.velocity_z = height_kf_handle.vertical_speed;
+                    log_packet.imu_status = (raw_bmi088.healthy ? 0x01 : 0x00) |
+                                            (raw_bmi270.healthy ? 0x02 : 0x00);
+                    log_packet.flight_mode = 0;
 
-            }
-            else
-            {
-                // 理论上不应该进这里，除非有其他任务误发了通知
-                LOGWARNING("[INS] Unknown notify bits: 0x%08X", notifyBits);
+                    if (!SD_Log_PushData(&log_packet, sizeof(log_packet))) {
+                        static uint32_t consecutive_drops = 0;
+                        consecutive_drops++;
+                        if (consecutive_drops > 50 && log_downsample_div < 4) {
+                            log_downsample_div *= 2;
+                            LOGWARNING("[INS] SD slow! Downsampling to %dHz",
+                                       1000 / log_downsample_div);
+                            consecutive_drops = 0;
+                        }
+                    } else {
+                        static uint32_t consecutive_success = 0;
+                        consecutive_success++;
+                        if (consecutive_success > 500 && log_downsample_div > 1) {
+                            log_downsample_div /= 2;
+                            LOGINFO("[INS] SD recovered! Upsampling to %dHz",
+                                    1000 / log_downsample_div);
+                            consecutive_success = 0;
+                        }
+                    }
+                }
+                // ═══════════ 日志部分结束 ═══════════
+
             }
         }
         else

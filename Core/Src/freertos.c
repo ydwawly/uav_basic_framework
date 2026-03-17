@@ -254,7 +254,7 @@ void MX_FREERTOS_Init(void) {
   xTaskCreate(Control_Task,"Control_Task",512,NULL,osPriorityHigh,&Control_Task_Handle);
   xTaskCreate(Comm_Task,"Comm_Task",512,NULL,osPriorityNormal,&Comm_Task_Handle);
   xTaskCreate(SensorHub_Task,"SensorHub_Task",1024,NULL,osPriorityHigh1,&SensorHub_Task_Handle);
-    xTaskCreate(UAV_DataLog_Task,"UAV_DataLog_Task",512,NULL,osPriorityNormal,&UAV_DataLog_Task_Handle);
+    xTaskCreate(UAV_DataLog_Task,"UAV_DataLog_Task",512,NULL,osPriorityLow,&UAV_DataLog_Task_Handle);
     xTaskCreate(Monitor_Task,"Monitor_Task",256,NULL,osPriorityLow,&Monitor_Task_Handle);
     xTaskCreate(USB_Tx_Task, "USB_Tx_Task", 512, NULL, osPriorityBelowNormal, &USB_Tx_Task_Handle);
   /* USER CODE END RTOS_THREADS */
@@ -370,5 +370,18 @@ static void Monitor_Task(void *argument)
     }
     /* USER CODE END Control_Task */
 }
+
+/* USER CODE BEGIN 4 */
+void vApplicationIdleHook( void )
+{
+    /* vApplicationIdleHook() will only be called if configUSE_IDLE_HOOK is set
+    to 1 in FreeRTOSConfig.h. It will be called on each iteration of the idle
+    task. It is essential that code added to this hook function never attempts
+    to block in any way... */
+
+    // ✨ 降温必杀技：让 CPU 挂起休眠，直到下一个中断（如 SysTick 或 USB/SPI 接收）到来才唤醒
+    __WFI();
+}
+/* USER CODE END 4 */
 /* USER CODE END Application */
 
