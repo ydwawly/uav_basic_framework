@@ -16,7 +16,7 @@
 static Subscriber_t *remote_data_sub;
 static Publisher_t  *uav_cmd_pub;
 
-static Subs_RC_Data_t rc_data;
+static Sbus_RC_Data_t rc_data;
 static Uav_Cmd_Data_t uav_cmd;
 
 // 辅助函数：遥控器摇杆映射计算 (带死区)
@@ -49,7 +49,7 @@ static float RC_Map_With_Deadband(uint16_t raw_val, uint16_t in_min, uint16_t in
 
 void Uav_Cmd_init()
 {
-    remote_data_sub = SubRegister("remote_data", sizeof(Subs_RC_Data_t));
+    remote_data_sub = SubRegister("remote_data", sizeof(Sbus_RC_Data_t));
     uav_cmd_pub = PubRegister("uav_cmd_data", sizeof(Uav_Cmd_Data_t));
 
     // 初始化安全状态

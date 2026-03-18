@@ -204,7 +204,8 @@ void USB_TxCplt_Callback(void)
  */
 void USB_Tx_Task(void *pvParameters)
 {
-    uint8_t tx_buf[256];  // 临时发送缓冲区
+    __attribute__((section(".dma_buffer")))
+    static uint8_t tx_buf[256];
     uint32_t bytes_to_send;
     uint32_t idle_count = 0;
 
